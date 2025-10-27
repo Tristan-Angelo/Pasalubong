@@ -103,6 +103,7 @@ const BuyerDashboard = () => {
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('');
   const [isPaginationLoading, setIsPaginationLoading] = useState(false);
+  const updateQuantityTimeoutRef = useRef({});
 
   // Define data loaders for each section
   const loadProductsData = useCallback(async () => {
@@ -371,11 +372,38 @@ const BuyerDashboard = () => {
         return;
       }
 
-      const response = await updateCartItem(productId, newQuantity);
-      if (response.success) {
-        // Reload cart to ensure UI is in sync
-        await loadCartData();
+      // Optimistic update - update UI immediately
+      setCart(prevCart => 
+        prevCart.map(cartItem => 
+          cartItem.id === productId 
+            ? { ...cartItem, quantity: newQuantity }
+            : cartItem
+        )
+      );
+
+      // Clear any existing timeout for this product
+      if (updateQuantityTimeoutRef.current[productId]) {
+        clearTimeout(updateQuantityTimeoutRef.current[productId]);
       }
+
+      // Debounce API call - only call after 800ms of no changes
+      updateQuantityTimeoutRef.current[productId] = setTimeout(async () => {
+        try {
+          const response = await updateCartItem(productId, newQuantity);
+          if (response.success) {
+            // Reload cart to ensure UI is in sync with server
+            await loadCartData();
+          }
+        } catch (error) {
+          console.error('Error updating quantity:', error);
+          showToast(error.message || 'Failed to update quantity', 'error');
+          // Revert optimistic update on error
+          await loadCartData();
+        } finally {
+          // Clean up timeout reference
+          delete updateQuantityTimeoutRef.current[productId];
+        }
+      }, 800); // Wait 800ms after last change before syncing with server
     } catch (error) {
       console.error('Error updating quantity:', error);
       showToast(error.message || 'Failed to update quantity', 'error');
