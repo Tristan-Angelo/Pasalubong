@@ -116,7 +116,7 @@ router.delete('/notifications/:id', authenticateAdmin, async (req, res) => {
 // Get admin profile
 router.get('/profile', authenticateAdmin, async (req, res) => {
   try {
-    const admin = await Admin.findById(req.adminId).select('-password');
+    const admin = await Admin.findById(req.adminId).select('-password').lean();
 
     res.json({
       success: true,
@@ -276,7 +276,8 @@ router.get('/customers', async (req, res) => {
   try {
     const customers = await Buyer.find()
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Transform data to match frontend format
     const transformedCustomers = customers.map(customer => ({
@@ -290,8 +291,9 @@ router.get('/customers', async (req, res) => {
       city: customer.city,
       barangay: customer.barangay,
       isEmailVerified: customer.isEmailVerified,
+      isActive: customer.isActive,
       createdAt: customer.createdAt,
-      image: `https://i.pravatar.cc/150?u=${customer.email}` // Generate avatar based on email
+      image: customer.photo || `https://i.pravatar.cc/150?u=${customer.email}` // Use actual photo if available
     }));
 
     res.json({
@@ -312,7 +314,9 @@ router.get('/sellers', async (req, res) => {
   try {
     const sellers = await Seller.find()
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(1000)
+      .lean();
 
     // Transform data to match frontend format
     const transformedSellers = sellers.map(seller => ({
@@ -329,8 +333,9 @@ router.get('/sellers', async (req, res) => {
       city: seller.city,
       barangay: seller.barangay,
       isEmailVerified: seller.isEmailVerified,
+      isActive: seller.isActive,
       createdAt: seller.createdAt,
-      image: `https://i.pravatar.cc/150?u=${seller.email}`
+      image: seller.photo || `https://i.pravatar.cc/150?u=${seller.email}` // Use actual photo if available
     }));
 
     res.json({
@@ -351,7 +356,9 @@ router.get('/riders', async (req, res) => {
   try {
     const riders = await Delivery.find()
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(1000)
+      .lean();
 
     // Transform data to match frontend format
     const transformedRiders = riders.map(rider => ({
@@ -362,15 +369,17 @@ router.get('/riders', async (req, res) => {
       address: `${rider.barangay}, ${rider.city}, ${rider.province}`,
       vehicleType: rider.vehicleType,
       licenseNumber: rider.licenseNumber,
-      plateNumber: rider.licenseNumber, // Using license number as placeholder
+      plateNumber: rider.vehiclePlate || rider.licenseNumber, // Use actual plate number if available
       emergencyContact: rider.phone,
       region: rider.region,
       province: rider.province,
       city: rider.city,
       barangay: rider.barangay,
       isEmailVerified: rider.isEmailVerified,
+      isAvailable: rider.isAvailable,
+      isActive: rider.isActive,
       createdAt: rider.createdAt,
-      image: `https://i.pravatar.cc/150?u=${rider.email}`
+      image: rider.photo || `https://i.pravatar.cc/150?u=${rider.email}` // Use actual photo if available
     }));
 
     res.json({
@@ -382,6 +391,77 @@ router.get('/riders', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch riders',
       message: 'An error occurred while fetching riders'
+    });
+  }
+});
+
+// Update a customer
+router.put('/customers/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove sensitive fields that shouldn't be updated this way
+    delete updateData.password;
+    delete updateData.verificationToken;
+    delete updateData.resetPasswordToken;
+
+    const customer = await Buyer.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!customer) {
+      return res.status(404).json({
+        error: 'Customer not found',
+        message: 'No customer found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Customer updated successfully',
+      customer
+    });
+  } catch (error) {
+    console.error('Update customer error:', error);
+    res.status(500).json({
+      error: 'Failed to update customer',
+      message: 'An error occurred while updating the customer'
+    });
+  }
+});
+
+// Toggle customer status
+router.patch('/customers/:id/toggle-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    const customer = await Buyer.findByIdAndUpdate(
+      id,
+      { isActive: isActive },
+      { new: true }
+    ).select('-password');
+    
+    if (!customer) {
+      return res.status(404).json({
+        error: 'Customer not found',
+        message: 'No customer found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Customer ${isActive ? 'activated' : 'deactivated'} successfully`,
+      customer
+    });
+  } catch (error) {
+    console.error('Toggle customer status error:', error);
+    res.status(500).json({
+      error: 'Failed to toggle customer status',
+      message: 'An error occurred while updating the customer status'
     });
   }
 });
@@ -413,6 +493,77 @@ router.delete('/customers/:id', async (req, res) => {
   }
 });
 
+// Update a seller
+router.put('/sellers/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove sensitive fields
+    delete updateData.password;
+    delete updateData.verificationToken;
+    delete updateData.resetPasswordToken;
+
+    const seller = await Seller.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'No seller found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Seller updated successfully',
+      seller
+    });
+  } catch (error) {
+    console.error('Update seller error:', error);
+    res.status(500).json({
+      error: 'Failed to update seller',
+      message: 'An error occurred while updating the seller'
+    });
+  }
+});
+
+// Toggle seller status
+router.patch('/sellers/:id/toggle-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    const seller = await Seller.findByIdAndUpdate(
+      id,
+      { isActive: isActive },
+      { new: true }
+    ).select('-password');
+    
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'No seller found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Seller ${isActive ? 'activated' : 'deactivated'} successfully`,
+      seller
+    });
+  } catch (error) {
+    console.error('Toggle seller status error:', error);
+    res.status(500).json({
+      error: 'Failed to toggle seller status',
+      message: 'An error occurred while updating the seller status'
+    });
+  }
+});
+
 // Delete a seller
 router.delete('/sellers/:id', async (req, res) => {
   try {
@@ -436,6 +587,77 @@ router.delete('/sellers/:id', async (req, res) => {
     res.status(500).json({
       error: 'Failed to delete seller',
       message: 'An error occurred while deleting the seller'
+    });
+  }
+});
+
+// Update a rider
+router.put('/riders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove sensitive fields
+    delete updateData.password;
+    delete updateData.verificationToken;
+    delete updateData.resetPasswordToken;
+
+    const rider = await Delivery.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!rider) {
+      return res.status(404).json({
+        error: 'Rider not found',
+        message: 'No rider found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Rider updated successfully',
+      rider
+    });
+  } catch (error) {
+    console.error('Update rider error:', error);
+    res.status(500).json({
+      error: 'Failed to update rider',
+      message: 'An error occurred while updating the rider'
+    });
+  }
+});
+
+// Toggle rider status
+router.patch('/riders/:id/toggle-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    const rider = await Delivery.findByIdAndUpdate(
+      id,
+      { isActive: isActive },
+      { new: true }
+    ).select('-password');
+    
+    if (!rider) {
+      return res.status(404).json({
+        error: 'Rider not found',
+        message: 'No rider found with this ID'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Rider ${isActive ? 'activated' : 'deactivated'} successfully`,
+      rider
+    });
+  } catch (error) {
+    console.error('Toggle rider status error:', error);
+    res.status(500).json({
+      error: 'Failed to toggle rider status',
+      message: 'An error occurred while updating the rider status'
     });
   }
 });
@@ -527,7 +749,10 @@ router.post('/products/upload-images', upload.array('images', 4), (req, res) => 
 router.get('/products', async (req, res) => {
   try {
     const products = await Product.find()
-      .sort({ createdAt: -1 });
+      .select('_id sku name category price stock seller description image images createdAt')
+      .sort({ createdAt: -1 })
+      .limit(1000)
+      .lean();
 
     // Transform data to match frontend format
     const transformedProducts = products.map(product => ({
@@ -761,10 +986,18 @@ router.delete('/products/:id', async (req, res) => {
 // Get all buyer orders (new system)
 router.get('/buyer-orders', authenticateAdmin, async (req, res) => {
   try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const totalOrders = await BuyerOrder.countDocuments();
     const orders = await BuyerOrder.find()
+      .select('orderNumber buyerId items total status deliveryAddress paymentMethod specialInstructions deliveryPersonId deliveryStatus sellerStatus proofOfDelivery proofOfDeliveryImages deliveredAt statusHistory createdAt')
       .populate('buyerId', 'fullname email phone')
       .populate('deliveryPersonId', 'fullname phone vehicleType vehiclePlate licenseNumber photo')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
 
     const transformedOrders = orders.map(order => ({
       id: order._id,
@@ -797,7 +1030,13 @@ router.get('/buyer-orders', authenticateAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      orders: transformedOrders
+      orders: transformedOrders,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalOrders / parseInt(limit)),
+        totalOrders,
+        ordersPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get buyer orders error:', error);
@@ -812,8 +1051,12 @@ router.get('/buyer-orders', authenticateAdmin, async (req, res) => {
 router.get('/delivery-persons', authenticateAdmin, async (req, res) => {
   try {
     const deliveryPersons = await Delivery.find({
-      isActive: true
-    }).select('fullname phone vehicleType vehiclePlate licenseNumber city barangay photo isActive');
+      isActive: true,
+      isAvailable: true
+    })
+    .select('fullname phone vehicleType vehiclePlate licenseNumber city barangay photo isActive isAvailable')
+    .limit(200)
+    .lean();
 
     res.json({
       success: true,
@@ -825,7 +1068,8 @@ router.get('/delivery-persons', authenticateAdmin, async (req, res) => {
         vehiclePlate: dp.vehiclePlate || dp.licenseNumber || 'N/A',
         location: `${dp.barangay}, ${dp.city}`,
         photo: dp.photo,
-        isActive: dp.isActive
+        isActive: dp.isActive,
+        isAvailable: dp.isAvailable
       }))
     });
   } catch (error) {
@@ -899,9 +1143,12 @@ router.put('/buyer-orders/:orderId/assign-delivery', authenticateAdmin, async (r
 router.get('/orders', async (req, res) => {
   try {
     const orders = await Order.find()
+      .select('orderNumber customer customerId amount status date notes items shippingAddress paymentMethod createdAt')
       .populate('customerId', 'fullname email')
       .populate('items.productId', 'name price image')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
 
     // Transform data to match frontend format
     const transformedOrders = orders.map(order => ({
@@ -945,7 +1192,8 @@ router.get('/orders/:id', async (req, res) => {
 
     const order = await Order.findById(id)
       .populate('customerId', 'fullname email phone')
-      .populate('items.productId', 'name price image');
+      .populate('items.productId', 'name price image')
+      .lean();
 
     if (!order) {
       return res.status(404).json({

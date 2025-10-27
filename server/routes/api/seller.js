@@ -7,6 +7,7 @@ import BuyerOrder from '../../models/BuyerOrder.js';
 import Delivery from '../../models/Delivery.js';
 import upload from '../../config/upload.js';
 import { getUserNotifications, getUnreadCount, markAsRead, markAllAsRead, deleteNotification, notifyOrderStatusChange, notifyLowStock, notifyDeliveryAssigned } from '../../utils/notificationService.js';
+import cache from '../../utils/cache.js';
 
 const router = Router();
 
@@ -116,7 +117,7 @@ router.delete('/notifications/:id', async (req, res) => {
 // Get seller profile
 router.get('/profile', async (req, res) => {
   try {
-    const seller = await Seller.findById(req.sellerId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode');
+    const seller = await Seller.findById(req.sellerId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode').lean();
 
     res.json({
       success: true,
@@ -280,15 +281,38 @@ router.put('/change-password', async (req, res) => {
 
 // ============= PRODUCT ROUTES =============
 
-// Get seller's products
+// Get seller's products (optimized)
 router.get('/products', async (req, res) => {
   try {
-    const seller = await Seller.findById(req.sellerId);
-    const products = await Product.find({ seller: seller.email });
+    const seller = await Seller.findById(req.sellerId).select('email').lean();
+    
+    // Use aggregation for better performance
+    const products = await Product.aggregate([
+      { $match: { seller: seller.email } },
+      { $sort: { createdAt: -1 } },
+      { $limit: 500 },
+      {
+        $project: {
+          _id: 1,
+          sku: 1,
+          name: 1,
+          category: 1,
+          price: 1,
+          stock: 1,
+          seller: 1,
+          description: 1,
+          image: 1,
+          images: 1,
+          rating: 1,
+          reviewCount: 1,
+          createdAt: 1
+        }
+      }
+    ]);
 
     // Transform products to ensure images array is included
     const transformedProducts = products.map(product => ({
-      ...product.toObject(),
+      ...product,
       id: product._id.toString(),
       images: product.images || [product.image]
     }));
@@ -423,6 +447,9 @@ router.post('/products', async (req, res) => {
       seller: seller.email
     });
 
+    // Invalidate statistics cache
+    cache.delete(`seller_stats:${seller.email}`);
+
     res.status(201).json({
       success: true,
       message: 'Product added successfully',
@@ -472,6 +499,11 @@ router.put('/products/:productId', async (req, res) => {
 
     await product.save();
 
+    // Invalidate statistics cache if stock changed
+    if (stock !== undefined && stock !== oldStock) {
+      cache.delete(`seller_stats:${seller.email}`);
+    }
+
     // Send low stock notification if stock is low
     if (product.stock <= 10 && oldStock > 10) {
       try {
@@ -510,6 +542,9 @@ router.delete('/products/:productId', async (req, res) => {
       });
     }
 
+    // Invalidate statistics cache
+    cache.delete(`seller_stats:${seller.email}`);
+
     res.json({
       success: true,
       message: 'Product deleted successfully'
@@ -525,42 +560,83 @@ router.delete('/products/:productId', async (req, res) => {
 
 // ============= ORDER ROUTES =============
 
-// Get seller's orders
+// Get seller's orders (optimized with aggregation)
 router.get('/orders', async (req, res) => {
   try {
-    const seller = await Seller.findById(req.sellerId);
-    console.log('🔍 Fetching orders for seller:', seller.email);
-    
-    // Find all orders that contain items from this seller
-    const orders = await BuyerOrder.find({
-      'items.seller': seller.email
-    })
-    .populate('buyerId', 'fullname email phone')
-    .populate('deliveryPersonId', 'fullname phone vehicleType vehiclePlate licenseNumber photo')
-    .sort({ createdAt: -1 });
-    
-    console.log('📦 Found orders:', orders.length);
-    
-    // Debug: Check all orders to see if seller field exists
-    const allOrders = await BuyerOrder.find({}).limit(5);
-    console.log('🔍 Debug - Sample of all orders in DB:', allOrders.length);
-    allOrders.forEach((order, idx) => {
-      console.log(`Order ${idx + 1} (${order.orderNumber}):`, 
-        order.items.map(i => ({ 
-          name: i.name, 
-          seller: i.seller,
-          hasSellerField: !!i.seller 
-        }))
-      );
-    });
-    
-    if (orders.length > 0) {
-      console.log('✅ First matching order items:', orders[0].items.map(i => ({ name: i.name, seller: i.seller })));
-    } else {
-      console.log('⚠️ No orders found for seller:', seller.email);
-    }
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Filter items to only show this seller's items
+    const seller = await Seller.findById(req.sellerId).select('email').lean();
+    
+    // Get total count
+    const totalOrders = await BuyerOrder.countDocuments({ 'items.seller': seller.email });
+
+    // Use aggregation pipeline for better performance
+    const orders = await BuyerOrder.aggregate([
+      // Match orders containing seller's items
+      { $match: { 'items.seller': seller.email } },
+      
+      // Sort by creation date
+      { $sort: { createdAt: -1 } },
+      
+      // Skip and limit for pagination
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+      
+      // Lookup buyer information
+      {
+        $lookup: {
+          from: 'buyers',
+          localField: 'buyerId',
+          foreignField: '_id',
+          as: 'buyer'
+        }
+      },
+      
+      // Lookup delivery person information
+      {
+        $lookup: {
+          from: 'deliveries',
+          localField: 'deliveryPersonId',
+          foreignField: '_id',
+          as: 'deliveryPerson'
+        }
+      },
+      
+      // Unwind arrays (convert to objects)
+      { $unwind: { path: '$buyer', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$deliveryPerson', preserveNullAndEmptyArrays: true } },
+      
+      // Project only needed fields
+      {
+        $project: {
+          orderNumber: 1,
+          items: 1,
+          deliveryAddress: 1,
+          paymentMethod: 1,
+          specialInstructions: 1,
+          deliveryStatus: 1,
+          sellerStatus: 1,
+          proofOfPaymentsBySeller: 1,
+          proofOfDelivery: 1,
+          proofOfDeliveryImages: 1,
+          deliveredAt: 1,
+          statusHistory: 1,
+          createdAt: 1,
+          'buyer.fullname': 1,
+          'buyer.email': 1,
+          'buyer.phone': 1,
+          'deliveryPerson.fullname': 1,
+          'deliveryPerson.phone': 1,
+          'deliveryPerson.vehicleType': 1,
+          'deliveryPerson.vehiclePlate': 1,
+          'deliveryPerson.licenseNumber': 1,
+          'deliveryPerson.photo': 1
+        }
+      }
+    ]);
+
+    // Transform results
     const sellerOrders = orders.map(order => {
       const sellerItems = order.items.filter(item => item.seller === seller.email);
       const sellerTotal = sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -574,20 +650,20 @@ router.get('/orders', async (req, res) => {
       const proofOfPayment = proofObj?.proofImage || null;
       
       // Get delivery person info
-      const deliveryPerson = order.deliveryPersonId ? {
-        name: order.deliveryPersonId.fullname,
-        phone: order.deliveryPersonId.phone,
-        vehicleType: order.deliveryPersonId.vehicleType,
-        vehiclePlate: order.deliveryPersonId.vehiclePlate || order.deliveryPersonId.licenseNumber,
-        photo: order.deliveryPersonId.photo
+      const deliveryPerson = order.deliveryPerson ? {
+        name: order.deliveryPerson.fullname,
+        phone: order.deliveryPerson.phone,
+        vehicleType: order.deliveryPerson.vehicleType,
+        vehiclePlate: order.deliveryPerson.vehiclePlate || order.deliveryPerson.licenseNumber,
+        photo: order.deliveryPerson.photo
       } : null;
       
       return {
         id: order._id,
         orderNumber: order.orderNumber,
-        customerName: order.buyerId?.fullname || 'Unknown',
-        customerEmail: order.buyerId?.email || '',
-        customerPhone: order.deliveryAddress?.phone || order.buyerId?.phone || '',
+        customerName: order.buyer?.fullname || 'Unknown',
+        customerEmail: order.buyer?.email || '',
+        customerPhone: order.deliveryAddress?.phone || order.buyer?.phone || '',
         date: order.createdAt,
         status: sellerStatus,
         total: sellerTotal,
@@ -607,7 +683,13 @@ router.get('/orders', async (req, res) => {
 
     res.json({
       success: true,
-      orders: sellerOrders
+      orders: sellerOrders,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalOrders / parseInt(limit)),
+        totalOrders,
+        ordersPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get seller orders error:', error);
@@ -718,6 +800,9 @@ router.put('/orders/:orderId/status', async (req, res) => {
 
     await order.save();
 
+    // Invalidate statistics cache
+    cache.delete(`seller_stats:${seller.email}`);
+
     // Send notification to buyer about status change
     if (order.buyerId) {
       try {
@@ -741,26 +826,58 @@ router.put('/orders/:orderId/status', async (req, res) => {
   }
 });
 
-// Get available delivery persons
+// Get available delivery persons (optimized with caching)
 router.get('/delivery-persons', async (req, res) => {
   try {
-    // Get all active delivery persons
-    const deliveryPersons = await Delivery.find({
-      isActive: true
-    }).select('fullname phone vehicleType vehiclePlate licenseNumber city barangay photo isActive');
+    // Check cache first
+    const cacheKey = 'delivery_persons:available';
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+      return res.json({
+        success: true,
+        deliveryPersons: cachedData
+      });
+    }
+
+    // Get all active and available delivery persons using aggregation
+    const deliveryPersons = await Delivery.aggregate([
+      { $match: { isActive: true, isAvailable: true } },
+      { $limit: 200 },
+      {
+        $project: {
+          fullname: 1,
+          phone: 1,
+          vehicleType: 1,
+          vehiclePlate: 1,
+          licenseNumber: 1,
+          city: 1,
+          barangay: 1,
+          photo: 1,
+          isActive: 1,
+          isAvailable: 1
+        }
+      }
+    ]);
+
+    const transformedData = deliveryPersons.map(dp => ({
+      id: dp._id,
+      name: dp.fullname,
+      phone: dp.phone,
+      vehicleType: dp.vehicleType,
+      vehiclePlate: dp.vehiclePlate || dp.licenseNumber || 'N/A',
+      location: `${dp.barangay}, ${dp.city}`,
+      photo: dp.photo,
+      isActive: dp.isActive,
+      isAvailable: dp.isAvailable
+    }));
+
+    // Cache for 15 seconds
+    cache.set(cacheKey, transformedData, 15);
 
     res.json({
       success: true,
-      deliveryPersons: deliveryPersons.map(dp => ({
-        id: dp._id,
-        name: dp.fullname,
-        phone: dp.phone,
-        vehicleType: dp.vehicleType,
-        vehiclePlate: dp.vehiclePlate || dp.licenseNumber || 'N/A',
-        location: `${dp.barangay}, ${dp.city}`,
-        photo: dp.photo,
-        isActive: dp.isActive
-      }))
+      deliveryPersons: transformedData
     });
   } catch (error) {
     console.error('Get delivery persons error:', error);
@@ -855,43 +972,99 @@ router.put('/orders/:orderId/assign-delivery', async (req, res) => {
 // Get seller statistics
 router.get('/statistics', async (req, res) => {
   try {
-    const seller = await Seller.findById(req.sellerId);
+    const seller = await Seller.findById(req.sellerId).select('email').lean();
     
-    // Get all orders with seller's items
-    const orders = await BuyerOrder.find({
-      'items.seller': seller.email
-    });
+    // Check cache first
+    const cacheKey = `seller_stats:${seller.email}`;
+    const cachedStats = cache.get(cacheKey);
+    
+    if (cachedStats) {
+      return res.json({
+        success: true,
+        statistics: cachedStats
+      });
+    }
 
-    // Calculate statistics
-    let totalRevenue = 0;
-    let totalOrders = orders.length;
-    let pendingOrders = 0;
-
-    orders.forEach(order => {
-      const sellerItems = order.items.filter(item => item.seller === seller.email);
-      const sellerTotal = sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      totalRevenue += sellerTotal;
-
-      // Find seller status from array
-      const sellerStatusObj = order.sellerStatus?.find(s => s.seller === seller.email);
-      const sellerStatus = sellerStatusObj?.status || 'Pending';
-      if (sellerStatus === 'Pending') {
-        pendingOrders++;
+    // Use aggregation pipeline for much better performance
+    const orderStats = await BuyerOrder.aggregate([
+      // Match orders containing seller's items
+      { $match: { 'items.seller': seller.email } },
+      
+      // Unwind items array to process each item
+      { $unwind: '$items' },
+      
+      // Filter only seller's items
+      { $match: { 'items.seller': seller.email } },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          itemTotal: { $multiply: ['$items.price', '$items.quantity'] },
+          sellerStatusForItem: {
+            $arrayElemAt: [
+              {
+                $filter: {
+                  input: '$sellerStatus',
+                  as: 'status',
+                  cond: { $eq: ['$$status.seller', seller.email] }
+                }
+              },
+              0
+            ]
+          }
+        }
+      },
+      
+      // Group to calculate statistics
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$itemTotal' },
+          totalOrders: { $addToSet: '$_id' },
+          pendingOrders: {
+            $sum: {
+              $cond: [
+                { 
+                  $or: [
+                    { $eq: ['$sellerStatusForItem.status', 'Pending'] },
+                    { $eq: ['$sellerStatusForItem', null] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      
+      // Project final shape
+      {
+        $project: {
+          _id: 0,
+          totalRevenue: 1,
+          totalOrders: { $size: '$totalOrders' },
+          pendingOrders: 1
+        }
       }
-    });
+    ]);
 
-    // Get active products count
-    const products = await Product.find({ seller: seller.email });
-    const activeProducts = products.length;
+    // Get active products count in parallel
+    const activeProducts = await Product.countDocuments({ seller: seller.email });
+
+    const statistics = {
+      totalRevenue: orderStats[0]?.totalRevenue || 0,
+      totalOrders: orderStats[0]?.totalOrders || 0,
+      activeProducts,
+      pendingOrders: orderStats[0]?.pendingOrders || 0
+    };
+
+    // Cache for 30 seconds
+    cache.set(cacheKey, statistics, 30);
 
     res.json({
       success: true,
-      statistics: {
-        totalRevenue,
-        totalOrders,
-        activeProducts,
-        pendingOrders
-      }
+      statistics
     });
   } catch (error) {
     console.error('Get statistics error:', error);

@@ -90,6 +90,10 @@ const sellerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   photo: {
     type: String,
     default: null
@@ -97,6 +101,9 @@ const sellerSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Index for efficient email lookups
+sellerSchema.index({ email: 1 });
 
 const Seller = mongoose.model('Seller', sellerSchema);
 

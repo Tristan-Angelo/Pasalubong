@@ -117,7 +117,7 @@ router.delete('/notifications/:id', async (req, res) => {
 // Get delivery profile
 router.get('/profile', async (req, res) => {
   try {
-    const delivery = await Delivery.findById(req.deliveryId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode');
+    const delivery = await Delivery.findById(req.deliveryId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode').lean();
 
     res.json({
       success: true,
@@ -135,7 +135,7 @@ router.get('/profile', async (req, res) => {
 // Update delivery profile
 router.put('/profile', async (req, res) => {
   try {
-    const { fullname, phone, vehicleType, vehiclePlate, serviceArea, photo, isActive } = req.body;
+    const { fullname, phone, vehicleType, vehiclePlate, serviceArea, photo, isAvailable } = req.body;
 
     const delivery = await Delivery.findById(req.deliveryId);
     if (!delivery) {
@@ -152,7 +152,7 @@ router.put('/profile', async (req, res) => {
     if (vehiclePlate) delivery.vehiclePlate = vehiclePlate;
     if (serviceArea) delivery.serviceArea = serviceArea;
     if (photo !== undefined) delivery.photo = photo;
-    if (isActive !== undefined) delivery.isActive = isActive;
+    if (isAvailable !== undefined) delivery.isAvailable = isAvailable;
 
     await delivery.save();
 
@@ -280,9 +280,10 @@ router.put('/change-password', async (req, res) => {
 // Get delivery assignments
 router.get('/deliveries', async (req, res) => {
   try {
-    // Get orders assigned to this delivery person (including newly assigned ones)
-    // OR orders ready for assignment (unassigned and in Assigned status)
-    const orders = await BuyerOrder.find({
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const query = {
       $or: [
         { 
           deliveryPersonId: req.deliveryId,
@@ -294,7 +295,20 @@ router.get('/deliveries', async (req, res) => {
           deliveryStatus: 'Assigned'
         }
       ]
-    }).populate('buyerId', 'fullname email phone').sort({ createdAt: -1 });
+    };
+
+    // Get total count
+    const totalDeliveries = await BuyerOrder.countDocuments(query);
+
+    // Get orders assigned to this delivery person (including newly assigned ones)
+    // OR orders ready for assignment (unassigned and in Assigned status)
+    const orders = await BuyerOrder.find(query)
+    .select('orderNumber buyerId items deliveryAddress deliveryStatus deliveryFee status createdAt')
+    .populate('buyerId', 'fullname email phone')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit))
+    .lean();
 
     // Get all unique seller emails from orders
     const sellerEmails = [...new Set(orders.flatMap(order => 
@@ -302,7 +316,9 @@ router.get('/deliveries', async (req, res) => {
     ))];
 
     // Fetch all sellers in one query
-    const sellers = await Seller.find({ email: { $in: sellerEmails } });
+    const sellers = await Seller.find({ email: { $in: sellerEmails } })
+      .select('email businessName barangay city province')
+      .lean();
     const sellerMap = new Map(sellers.map(seller => [seller.email, seller]));
 
     const deliveries = orders.map(order => {
@@ -347,7 +363,13 @@ router.get('/deliveries', async (req, res) => {
 
     res.json({
       success: true,
-      deliveries
+      deliveries,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalDeliveries / parseInt(limit)),
+        totalDeliveries,
+        deliveriesPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get deliveries error:', error);
@@ -612,7 +634,10 @@ router.get('/statistics', async (req, res) => {
   try {
     const orders = await BuyerOrder.find({
       deliveryPersonId: req.deliveryId
-    });
+    })
+    .select('deliveryStatus deliveryFee updatedAt')
+    .limit(5000)
+    .lean();
 
     const activeDeliveries = orders.filter(o => 
       ['Assigned', 'Accepted', 'Picked Up', 'In Transit'].includes(o.deliveryStatus)
@@ -748,7 +773,11 @@ router.get('/earnings', async (req, res) => {
     const orders = await BuyerOrder.find({
       deliveryPersonId: req.deliveryId,
       deliveryStatus: 'Delivered'
-    }).sort({ updatedAt: -1 });
+    })
+    .select('deliveryFee updatedAt')
+    .sort({ updatedAt: -1 })
+    .limit(1000)
+    .lean();
 
     // Group by date
     const earningsByDate = {};

@@ -145,6 +145,9 @@ const DeliveryLogin = () => {
           setFieldErrors(prev => ({ ...prev, email: errorMessage }));
         } else if (errorMessage.toLowerCase().includes('password') || errorMessage.toLowerCase().includes('incorrect')) {
           setFieldErrors(prev => ({ ...prev, password: errorMessage }));
+        } else if (errorMessage.toLowerCase().includes('deactivated')) {
+          // Show deactivated message as general error
+          setFieldErrors(prev => ({ ...prev, email: errorMessage }));
         }
       }
     } finally {

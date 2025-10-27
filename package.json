@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "seed:admin": "node server/scripts/seedAdmin.js",
     "approve:delivery": "node server/scripts/approveDeliveryPersons.js",
-    "fix:delivery-names": "node server/scripts/fixDeliveryNames.js"
+    "fix:delivery-names": "node server/scripts/fixDeliveryNames.js",
+    "add:indexes": "node server/scripts/addDatabaseIndexes.js",
+    "create:indexes": "node server/scripts/createIndexes.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -35,7 +37,8 @@
     "react-dom": "^19.1.1",
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^6.28.0",
-    "recharts": "^3.3.0"
+    "recharts": "^3.3.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

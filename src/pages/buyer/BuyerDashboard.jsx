@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../../components/Navigation';
 import Footer from '../../components/Footer';
@@ -12,6 +12,9 @@ import ProductViewModal from '../../components/ProductViewModal';
 import ProductCard from '../../components/ProductCard';
 import ReviewModal from '../../components/ReviewModal';
 import FaceCaptureModal from '../../components/FaceCaptureModal';
+import LoadingProgressBar from '../../components/LoadingProgressBar';
+import SkeletonLoader from '../../components/SkeletonLoader';
+import useLazyDashboardData from '../../hooks/useLazyDashboardData';
 import {
   getBuyerProfile,
   updateBuyerProfile,
@@ -47,7 +50,6 @@ const BuyerDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [profile, setProfile] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [capturedFaceData, setCapturedFaceData] = useState(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showTrackOrderModal, setShowTrackOrderModal] = useState(false);
@@ -91,83 +93,19 @@ const BuyerDashboard = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedOrderForReview, setSelectedOrderForReview] = useState(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [ordersPagination, setOrdersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalOrders: 0,
+    ordersPerPage: 10
+  });
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('');
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
 
-  // Load all data on mount
-  useEffect(() => {
-    console.log('🚀 BuyerDashboard mounted, loading all data...');
-    loadAllData();
-  }, []);
-
-  // Reload products when filters change
-  useEffect(() => {
-    console.log('🔄 Filters changed, reloading products...', { isLoading, searchTerm, categoryFilter, sortBy });
-    if (!isLoading) {
-      loadProducts();
-    }
-  }, [searchTerm, categoryFilter, sortBy]);
-
-  // Auto-refresh orders every 30 seconds when on orders page
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Only refresh if user is on orders page
-      if (activePage === 'orders') {
-        loadOrders();
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [activePage]);
-
-  const loadAllData = async () => {
-    console.log('📊 Starting to load all data...');
-    setIsLoading(true);
-    try {
-      const token = localStorage.getItem('buyer_token') || sessionStorage.getItem('buyer_token');
-      console.log('🔑 Token exists:', !!token);
-
-      await Promise.all([
-        loadProfile(),
-        loadProducts(),
-        loadCart(),
-        loadFavorites(),
-        loadAddresses(),
-        loadOrders()
-      ]);
-      console.log('✅ All data loaded successfully');
-    } catch (error) {
-      console.error('❌ Error loading data:', error);
-      showToast(error.message || 'Failed to load data', 'error');
-      if (error.message === 'Invalid token' || error.message === 'Token expired' || error.message === 'No token provided') {
-        console.log('🚪 Logging out due to auth error');
-        handleLogout();
-      }
-    } finally {
-      setIsLoading(false);
-      console.log('✅ Loading complete, isLoading set to false');
-    }
-  };
-
-  const loadProfile = async () => {
-    try {
-      const response = await getBuyerProfile();
-      if (response.success) {
-        setProfile(response.profile);
-        setProfileFormData({
-          fullname: response.profile.fullname || '',
-          phone: response.profile.phone || '',
-          birthday: response.profile.birthday ? new Date(response.profile.birthday).toISOString().split('T')[0] : '',
-          photo: response.profile.photo || null
-        });
-        if (response.profile.photo) {
-          setProfilePhotoPreview(response.profile.photo);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    }
-  };
-
-  const loadProducts = async () => {
+  // Define data loaders for each section
+  const loadProductsData = useCallback(async () => {
     try {
       const params = {};
       if (searchTerm) params.search = searchTerm;
@@ -181,81 +119,190 @@ const BuyerDashboard = () => {
       if (response.success) {
         setProducts(response.products);
         console.log(`✅ Loaded ${response.products.length} products`);
-        if (response.products.length > 0) {
-          console.log('📋 Sample product:', response.products[0]);
-          console.log('🔑 Sample product ID:', response.products[0].id);
-        }
       } else {
-        console.error('❌ Failed to load products:', response);
-        showToast(response.message || 'Failed to load products', 'error');
+        console.warn('⚠️ Products fetch returned success=false:', response);
       }
     } catch (error) {
       console.error('❌ Error loading products:', error);
       showToast(error.message || 'Failed to load products', 'error');
     }
-  };
+  }, [searchTerm, categoryFilter, sortBy]);
 
-  const loadCart = async () => {
+  const loadCartData = useCallback(async () => {
     try {
+      console.log('🛒 Fetching buyer cart...');
       const response = await getBuyerCart();
+      console.log('📦 Cart response:', response);
       if (response.success) {
-        console.log('🛒 Cart loaded:', response.cart);
-        // Log seller info for each item
-        response.cart.forEach(item => {
-          console.log(`  - ${item.name}: seller=${item.seller}, palawanPayNumber=${item.sellerInfo?.palawanPayNumber || 'NOT SET'}`);
-        });
         setCart(response.cart);
+        console.log(`✅ Loaded ${response.cart.length} cart items`);
       }
     } catch (error) {
-      console.error('Error loading cart:', error);
+      console.error('❌ Error loading cart:', error);
     }
-  };
+  }, []);
 
-  const loadFavorites = async () => {
+  const loadFavoritesData = useCallback(async () => {
     try {
+      console.log('⭐ Fetching buyer favorites...');
       const response = await getBuyerFavorites();
+      console.log('📦 Favorites response:', response);
       if (response.success) {
         setFavorites(response.favorites);
+        console.log(`✅ Loaded ${response.favorites.length} favorites`);
       }
     } catch (error) {
-      console.error('Error loading favorites:', error);
+      console.error('❌ Error loading favorites:', error);
     }
-  };
+  }, []);
 
-  const loadAddresses = async () => {
+  const loadAddressesData = useCallback(async () => {
     try {
+      console.log('📍 Fetching buyer addresses...');
       const response = await getBuyerAddresses();
+      console.log('📦 Addresses response:', response);
       if (response.success) {
         setAddresses(response.addresses);
+        console.log(`✅ Loaded ${response.addresses.length} addresses`);
       }
     } catch (error) {
-      console.error('Error loading addresses:', error);
+      console.error('❌ Error loading addresses:', error);
     }
+  }, []);
+
+  const loadOrdersData = useCallback(async (page = null) => {
+    try {
+      console.log('📦 Fetching buyer orders...');
+      const currentPage = page !== null ? page : ordersPagination.currentPage;
+      const response = await getBuyerOrders(currentPage, ordersPagination.ordersPerPage);
+      console.log('📦 Orders response:', response);
+      if (response.success) {
+        setOrders(response.orders);
+        if (response.pagination) {
+          setOrdersPagination(response.pagination);
+        }
+        console.log(`✅ Loaded ${response.orders.length} orders`);
+      }
+    } catch (error) {
+      console.error('❌ Error loading orders:', error);
+    }
+  }, [ordersPagination.currentPage, ordersPagination.ordersPerPage]);
+
+  const loadProfileData = useCallback(async () => {
+    try {
+      console.log('👤 Fetching buyer profile...');
+      const response = await getBuyerProfile();
+      console.log('📦 Profile response:', response);
+      if (response.success) {
+        setProfile(response.profile);
+        setProfileFormData({
+          fullname: response.profile.fullname || '',
+          phone: response.profile.phone || '',
+          birthday: response.profile.birthday || '',
+          photo: response.profile.photo || null
+        });
+        if (response.profile.photo) {
+          setProfilePhotoPreview(response.profile.photo);
+        }
+        console.log('✅ Profile loaded successfully');
+      }
+    } catch (error) {
+      console.error('❌ Error loading profile:', error);
+      showToast(error.message || 'Failed to load profile', 'error');
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  }, []);
+
+  // Define data loaders for each section
+  // Keep this stable by not including it in dependencies of the hook
+  const dataLoaders = {
+    shop: [loadProductsData, loadCartData, loadFavoritesData],
+    cart: [loadCartData],
+    favorites: [loadFavoritesData, loadProductsData],
+    orders: [loadOrdersData],
+    addresses: [loadAddressesData],
+    profile: [loadProfileData],
+    'profile-settings': [loadProfileData],
+    'account-settings': [loadProfileData],
+    help: []
   };
 
-  const loadOrders = async () => {
-    try {
-      const response = await getBuyerOrders();
-      if (response.success) {
-        // Mark orders as reviewable if delivered
-        const ordersWithReviewStatus = response.orders.map(order => {
-          if (order.status === 'Delivered' && !order.canReview) {
-            // Check if all items are reviewed
-            const allReviewed = order.items?.every(item => 
-              order.itemReviews?.some(ir => 
-                ir.productId.toString() === item.productId?.toString() && ir.reviewed
-              )
-            );
-            return { ...order, canReview: !allReviewed };
-          }
-          return order;
-        });
-        setOrders(ordersWithReviewStatus);
-      }
-    } catch (error) {
-      console.error('Error loading orders:', error);
+  // Use lazy loading hook
+  const { isLoading, isSectionLoaded, canRenderSection, canNavigate, reloadSection, initialLoadComplete, loadingRef } = useLazyDashboardData(
+    activePage,
+    dataLoaders
+  );
+
+  // Load profile on mount
+  useEffect(() => {
+    loadProfileData();
+  }, []);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('📊 Dashboard state:', {
+      activePage,
+      isLoading,
+      initialLoadComplete,
+      isSectionLoaded: isSectionLoaded(activePage),
+      canRender: canRenderSection(activePage)
+    });
+  }, [activePage, isLoading, initialLoadComplete, isSectionLoaded, canRenderSection]);
+
+  // Navigation handler - prevent navigation while loading
+  const handleNavigate = useCallback((page) => {
+    // Use ref for immediate check to prevent race conditions
+    if (loadingRef.current || isLoading) {
+      console.log('⏸️ Navigation blocked - loading in progress');
+      return; // Prevent navigation while loading
     }
-  };
+    console.log(`✅ Navigating to: ${page}`);
+    setActivePage(page);
+  }, [isLoading, loadingRef]);
+
+  // Reload products when filters change
+  const prevFiltersRef = useRef({ searchTerm, categoryFilter, sortBy });
+  const isFirstRenderRef = useRef(true);
+  
+  useEffect(() => {
+    // Skip on first render
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      prevFiltersRef.current = { searchTerm, categoryFilter, sortBy };
+      return;
+    }
+
+    const filtersChanged = 
+      prevFiltersRef.current.searchTerm !== searchTerm ||
+      prevFiltersRef.current.categoryFilter !== categoryFilter ||
+      prevFiltersRef.current.sortBy !== sortBy;
+
+    if (filtersChanged) {
+      console.log('🔄 Filters changed, reloading products...', { searchTerm, categoryFilter, sortBy });
+      prevFiltersRef.current = { searchTerm, categoryFilter, sortBy };
+      
+      if (!isLoading && activePage === 'shop' && isSectionLoaded('shop')) {
+        reloadSection('shop');
+      }
+    }
+  }, [searchTerm, categoryFilter, sortBy]);
+
+  // Auto-refresh orders every 30 seconds when on orders page
+  useEffect(() => {
+    if (activePage !== 'orders') return;
+
+    const interval = setInterval(() => {
+      // Only refresh if user is on orders page and not currently loading
+      if (!loadingRef.current && !isLoading) {
+        console.log('🔄 Auto-refreshing orders...');
+        reloadSection('orders');
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [activePage]);
+
 
   const updateCartBadge = () => {
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -279,7 +326,7 @@ const BuyerDashboard = () => {
 
       if (response.success) {
         // Reload cart to ensure UI is in sync
-        await loadCart();
+        await loadCartData();
         showToast(`${product?.name || 'Product'} added to cart!`, 'success');
       }
     } catch (error) {
@@ -296,14 +343,14 @@ const BuyerDashboard = () => {
         const response = await removeFromFavorites(productId);
         if (response.success) {
           // Reload favorites to ensure UI is in sync
-          await loadFavorites();
+          await loadFavoritesData();
           showToast('Removed from favorites', 'info');
         }
       } else {
         const response = await addToFavorites(productId);
         if (response.success) {
           // Reload favorites to ensure UI is in sync
-          await loadFavorites();
+          await loadFavoritesData();
           showToast('Added to favorites!', 'success');
         }
       }
@@ -327,7 +374,7 @@ const BuyerDashboard = () => {
       const response = await updateCartItem(productId, newQuantity);
       if (response.success) {
         // Reload cart to ensure UI is in sync
-        await loadCart();
+        await loadCartData();
       }
     } catch (error) {
       console.error('Error updating quantity:', error);
@@ -340,7 +387,7 @@ const BuyerDashboard = () => {
       const response = await removeFromCartAPI(productId);
       if (response.success) {
         // Reload cart to ensure UI is in sync
-        await loadCart();
+        await loadCartData();
         showToast('Item removed from cart', 'info');
       }
     } catch (error) {
@@ -421,7 +468,7 @@ const BuyerDashboard = () => {
         setShowCheckoutModal(false);
         showToast('Order placed successfully!', 'success');
         // Reload both cart and orders to ensure UI is in sync
-        await Promise.all([loadCart(), loadOrders()]);
+        await Promise.all([loadCartData(), loadOrdersData()]);
         setActivePage('orders');
       }
     } catch (error) {
@@ -599,7 +646,7 @@ const BuyerDashboard = () => {
     try {
       const response = await addBuyerAddress(newAddressData);
       if (response.success) {
-        await loadAddresses();
+        await loadAddressesData();
         setShowAddAddressModal(false);
         setNewAddressData({
           label: '',
@@ -636,7 +683,7 @@ const BuyerDashboard = () => {
     try {
       const response = await deleteBuyerAddress(addressId);
       if (response.success) {
-        await loadAddresses();
+        await loadAddressesData();
         showToast('Address deleted successfully!', 'success');
       }
     } catch (error) {
@@ -686,7 +733,7 @@ const BuyerDashboard = () => {
         </div>
         <button
           onClick={async () => {
-            await loadProducts();
+            await reloadSection('shop');
             showToast('Products refreshed!', 'success');
           }}
           className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-xl text-sm font-medium transition-colors"
@@ -805,28 +852,83 @@ const BuyerDashboard = () => {
     </section>
   );
 
-  const renderOrdersPage = () => (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h3 className="text-lg font-semibold">My Orders</h3>
-        <button
-          onClick={async () => {
-            await loadOrders();
-            showToast('Orders refreshed!', 'success');
-          }}
-          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
-        >
-          🔄 Refresh Orders
-        </button>
-      </div>
-      <div className="space-y-4">
-        {orders.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">No orders yet</p>
-        ) : (
-          orders.map(order => (
-            <div
-              key={order.id}
-              className={`card p-4 hover-animate cursor-pointer hover:shadow-lg transition-shadow ${getStatusBackgroundColor(getDisplayStatus(order))}`}
+  const renderOrdersPage = () => {
+    // Filter orders based on search term and status
+    const filteredOrders = orders.filter(order => {
+      const matchesSearch = !orderSearchTerm || 
+        order.id?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+        order.orderNumber?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+        order.items?.some(item => item.name?.toLowerCase().includes(orderSearchTerm.toLowerCase()));
+      
+      const matchesStatus = !orderStatusFilter || order.status === orderStatusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+
+    return (
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 className="text-lg font-semibold">My Orders ({ordersPagination.totalOrders})</h3>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              placeholder="Search orders..."
+              value={orderSearchTerm}
+              onChange={(e) => setOrderSearchTerm(e.target.value)}
+              className="px-3 py-2 rounded-xl border outline-none"
+            />
+            <select
+              value={orderStatusFilter}
+              onChange={(e) => setOrderStatusFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl border"
+            >
+              <option value="">All Status</option>
+              <option value="Pending">Pending</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Preparing">Preparing</option>
+              <option value="Ready">Ready</option>
+              <option value="Out for Delivery">Out for Delivery</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+            <button
+              onClick={async () => {
+                await reloadSection('orders');
+                showToast('Orders refreshed!', 'success');
+              }}
+              className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
+            >
+              🔄 Refresh Orders
+            </button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {filteredOrders.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📦</div>
+              <h3 className="text-xl font-semibold mb-2">No Orders Found</h3>
+              <p className="text-gray-600 mb-4">
+                {orderSearchTerm || orderStatusFilter 
+                  ? 'No orders match your search criteria. Try adjusting your filters.'
+                  : 'You haven\'t placed any orders yet.'}
+              </p>
+              {(orderSearchTerm || orderStatusFilter) && (
+                <button
+                  onClick={() => {
+                    setOrderSearchTerm('');
+                    setOrderStatusFilter('');
+                  }}
+                  className="text-blue-600 hover:underline text-sm"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredOrders.map(order => (
+              <div
+                key={order.id}
+                className={`card p-4 hover-animate cursor-pointer hover:shadow-lg transition-shadow ${getStatusBackgroundColor(getDisplayStatus(order))}`}
               onClick={() => {
                 setSelectedOrder(order);
                 setShowTrackOrderModal(true);
@@ -841,7 +943,7 @@ const BuyerDashboard = () => {
                       <p className="text-sm font-medium text-green-900 mb-2">🚚 Delivery Person</p>
                       <div className="flex items-start gap-2">
                         {/* Delivery Person Photo */}
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-white flex-shrink-0 border-2 border-green-300">
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-green-100 flex-shrink-0 border-2 border-green-300">
                           {order.deliveryPerson.photo ? (
                             <img
                               src={order.deliveryPerson.photo}
@@ -849,7 +951,7 @@ const BuyerDashboard = () => {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-green-600 text-sm">
+                            <div className="w-full h-full flex items-center justify-center text-green-600 text-lg font-semibold">
                               🚚
                             </div>
                           )}
@@ -904,11 +1006,57 @@ const BuyerDashboard = () => {
                 )}
               </div>
             </div>
-          ))
+            ))
+          )}
+        </div>
+
+        {/* Pagination Controls */}
+        {ordersPagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 p-4 bg-white rounded-lg border">
+            <div className="text-sm text-gray-600">
+              Showing page {ordersPagination.currentPage} of {ordersPagination.totalPages}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  const newPage = ordersPagination.currentPage - 1;
+                  setIsPaginationLoading(true);
+                  setOrdersPagination(prev => ({ ...prev, currentPage: newPage }));
+                  await loadOrdersData(newPage);
+                  setIsPaginationLoading(false);
+                }}
+                disabled={ordersPagination.currentPage === 1 || isPaginationLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  ordersPagination.currentPage === 1 || isPaginationLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-rose-500 hover:bg-rose-600 text-white'
+                }`}
+              >
+                ← Previous
+              </button>
+              <button
+                onClick={async () => {
+                  const newPage = ordersPagination.currentPage + 1;
+                  setIsPaginationLoading(true);
+                  setOrdersPagination(prev => ({ ...prev, currentPage: newPage }));
+                  await loadOrdersData(newPage);
+                  setIsPaginationLoading(false);
+                }}
+                disabled={ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-rose-500 hover:bg-rose-600 text-white'
+                }`}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         )}
-      </div>
-    </section>
-  );
+      </section>
+    );
+  };
 
   const renderFavoritesPage = () => (
     <section className="space-y-4">
@@ -950,7 +1098,7 @@ const BuyerDashboard = () => {
       <div className="card p-6 hover-animate">
         <h2 className="text-lg font-semibold mb-4">Profile Settings</h2>
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-20 h-20 rounded-full border-2 border-rose-500 overflow-hidden bg-gray-100 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full border-2 border-rose-500 overflow-hidden bg-rose-50 flex items-center justify-center">
             {profilePhotoPreview ? (
               <img
                 src={profilePhotoPreview}
@@ -958,7 +1106,7 @@ const BuyerDashboard = () => {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <span className="text-4xl text-gray-400">👤</span>
+              <span className="text-4xl text-rose-600 font-semibold">👤</span>
             )}
           </div>
           <div className="flex-1">
@@ -1198,7 +1346,7 @@ const BuyerDashboard = () => {
       if (response.success) {
         showToast('Reviews submitted successfully!', 'success');
         // Reload orders and products to update ratings
-        await Promise.all([loadOrders(), loadProducts()]);
+        await Promise.all([loadOrdersData(), loadProductsData()]);
         // Close modal after successful submission
         setShowReviewModal(false);
         setSelectedOrderForReview(null);
@@ -1212,6 +1360,73 @@ const BuyerDashboard = () => {
   };
 
   const renderCurrentPage = () => {
+    // Don't render section content until data is loaded
+    const canRender = canRenderSection(activePage);
+    const sectionLoaded = isSectionLoaded(activePage);
+    
+    console.log('🎨 Render check:', { 
+      activePage, 
+      canRender, 
+      sectionLoaded, 
+      isLoading,
+      initialLoadComplete 
+    });
+    
+    if (!canRender) {
+      console.log('⏳ Showing skeleton for:', activePage);
+      return (
+        <div className="space-y-6">
+          {activePage === 'shop' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <SkeletonLoader variant="product-card" count={8} />
+              </div>
+            </>
+          )}
+          {activePage === 'cart' && (
+            <>
+              <div className="space-y-4">
+                <SkeletonLoader variant="order-card" count={4} />
+              </div>
+            </>
+          )}
+          {activePage === 'orders' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-4">
+                <SkeletonLoader variant="order-card" count={6} />
+              </div>
+            </>
+          )}
+          {activePage === 'favorites' && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <SkeletonLoader variant="product-card" count={8} />
+              </div>
+            </>
+          )}
+          {activePage === 'addresses' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-4">
+                <SkeletonLoader variant="card" count={3} />
+              </div>
+            </>
+          )}
+          {activePage === 'profile' && (
+            <SkeletonLoader variant="profile" count={1} />
+          )}
+          {(activePage === 'profile-settings' || activePage === 'account-settings') && (
+            <SkeletonLoader variant="profile" count={1} />
+          )}
+          {activePage === 'help' && (
+            <SkeletonLoader variant="card" count={1} />
+          )}
+        </div>
+      );
+    }
+
     switch (activePage) {
       case 'shop':
         return renderShopPage();
@@ -1278,12 +1493,33 @@ const BuyerDashboard = () => {
     navigate('/buyer/login');
   };
 
-  if (isLoading) {
+  // Show loading state only while initial profile is being fetched
+  if (isLoadingProfile) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+        <div className="h-20 bg-white border-b border-gray-200 animate-pulse">
+          <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
+            <div className="h-8 bg-gray-200 rounded w-32"></div>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+        <div className="flex h-[calc(100vh-80px)]">
+          <div className="w-64 bg-white border-r border-gray-200 p-4 space-y-2">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="product-card" count={8} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1291,11 +1527,14 @@ const BuyerDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 text-gray-800">
+      {/* Loading Progress Bar */}
+      <LoadingProgressBar isLoading={isLoading} />
+      
       {/* Dashboard Navbar */}
       <DashboardNavbar
         userType="buyer"
         onLogout={handleLogout}
-        onNavigate={setActivePage}
+        onNavigate={handleNavigate}
         userData={profile}
         cartCount={updateCartBadge()}
         onToggleSidebar={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -1306,12 +1545,13 @@ const BuyerDashboard = () => {
         {/* Sidebar */}
         <DashboardSidebar
           activePage={activePage}
-          setActivePage={setActivePage}
+          setActivePage={handleNavigate}
           userType="buyer"
           cartCount={updateCartBadge()}
           userData={profile}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
+          isLoading={isLoading}
         />
 
         {/* Main content */}
@@ -2404,6 +2644,8 @@ const BuyerDashboard = () => {
         userProfile={profile}
       />
 
+      {/* Loading Progress Bar */}
+      <LoadingProgressBar isLoading={isLoading || isPaginationLoading} />
     </div>
   );
 };

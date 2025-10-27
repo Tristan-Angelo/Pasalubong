@@ -102,6 +102,10 @@ const deliverySchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Index for efficient email lookups
+deliverySchema.index({ email: 1 });
+deliverySchema.index({ isActive: 1, isAvailable: 1 });
+
 const Delivery = mongoose.model('Delivery', deliverySchema);
 
 export default Delivery;

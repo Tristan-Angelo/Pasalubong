@@ -65,10 +65,21 @@ const buyerSchema = new mongoose.Schema({
     type: String,
     default: 'buyer',
     immutable: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  photo: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true
 });
+
+// Index for efficient email lookups
+buyerSchema.index({ email: 1 });
 
 const Buyer = mongoose.model('Buyer', buyerSchema);
 

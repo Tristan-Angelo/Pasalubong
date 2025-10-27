@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ToastNotification from '../../components/admin/ToastNotification';
 import DashboardNavbar from '../../components/DashboardNavbar';
@@ -9,8 +9,18 @@ import ConfirmDeleteModal from '../../components/admin/ConfirmDeleteModal';
 import ProfileSettings from '../../components/ProfileSettings';
 import AccountSettings from '../../components/AccountSettings';
 import DeliveryPersonAutocomplete from '../../components/DeliveryPersonAutocomplete';
-import { getCustomers, getSellers, getRiders, deleteCustomer, deleteSeller, deleteRider, getProducts, createProduct, updateProduct, deleteProduct, getOrders, createOrder, updateOrder, deleteOrder, updateOrderStatus, getAdminProfile, updateAdminProfile, changeAdminEmail, changeAdminPassword, getAdminDeliveryPersons, adminAssignDeliveryPerson } from '../../utils/api';
+import OpenStreetMapAutocomplete from '../../components/OpenStreetMapAutocomplete';
+import StatisticsCard from '../../components/admin/StatisticsCard';
+import NotificationCenter from '../../components/admin/NotificationCenter';
+import AnalyticsChart from '../../components/admin/AnalyticsChart';
+import ActivityLog from '../../components/admin/ActivityLog';
+import BulkActionsModal from '../../components/admin/BulkActionsModal';
+import LoadingProgressBar from '../../components/LoadingProgressBar';
+import SkeletonLoader from '../../components/SkeletonLoader';
+import useLazyDashboardData from '../../hooks/useLazyDashboardData';
+import { getCustomers, getSellers, getRiders, updateCustomer, updateSeller, updateRider, toggleUserStatus, deleteCustomer, deleteSeller, deleteRider, getProducts, createProduct, updateProduct, deleteProduct, getOrders, createOrder, updateOrder, deleteOrder, updateOrderStatus, getAdminProfile, updateAdminProfile, changeAdminEmail, changeAdminPassword, getAdminDeliveryPersons, adminAssignDeliveryPerson, getAdminBuyerOrders, getAdminUnreadCount } from '../../utils/api';
 import { getStatusChipColor, getStatusBackgroundColor, getStatusIcon, getDisplayStatus } from '../../utils/orderStatusStyles';
+import { exportDashboardSummary } from '../../utils/excelExport';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -62,6 +72,22 @@ const AdminDashboard = () => {
   const [showOrderTrackingModal, setShowOrderTrackingModal] = useState(false);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState(null);
 
+  // Notification states
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  // Bulk actions states
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [isBulkActionsModalOpen, setIsBulkActionsModalOpen] = useState(false);
+  const [bulkActionType, setBulkActionType] = useState('');
+
+  // Analytics states
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [dateRange, setDateRange] = useState('7days');
+
+  // Activity log
+  const [activityLog, setActivityLog] = useState([]);
+
   // Modal states
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -69,6 +95,8 @@ const AdminDashboard = () => {
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [currentUserType, setCurrentUserType] = useState('');
   const [editingItem, setEditingItem] = useState(null);
+  const [editedUserData, setEditedUserData] = useState(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   // Delete modal states
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -81,52 +109,162 @@ const AdminDashboard = () => {
   });
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Initialize data from MongoDB
-  useEffect(() => {
-    const loadData = async () => {
-      // Fetch all data from MongoDB
-      try {
-        const [productsData, customersData, sellersData, ridersData, ordersData, deliveryPersonsData] = await Promise.all([
-          getProducts(),
-          getCustomers(),
-          getSellers(),
-          getRiders(),
-          getOrders(),
-          getAdminDeliveryPersons()
-        ]);
-
-        if (productsData.success) {
-          setProducts(productsData.products);
-        }
-
-        if (customersData.success) {
-          setCustomers(customersData.customers);
-        }
-
-        if (sellersData.success) {
-          setSellers(sellersData.sellers);
-        }
-
-        if (ridersData.success) {
-          setRiders(ridersData.riders);
-        }
-
-        if (ordersData.success) {
-          setOrders(ordersData.orders);
-        }
-
-        if (deliveryPersonsData.success) {
-          // Filter only active delivery persons for assignment (isActive === true)
-          const activeDeliveryPersons = deliveryPersonsData.deliveryPersons.filter(dp => dp.isActive === true);
-          setDeliveryPersons(activeDeliveryPersons);
-        }
-      } catch (error) {
-        console.error('Error fetching data from MongoDB:', error);
-        showToast('Failed to load some data from server', 'error');
+  // Define data loaders for each section
+  const loadProductsData = useCallback(async () => {
+    try {
+      const productsData = await getProducts();
+      if (productsData.success) {
+        setProducts(productsData.products);
       }
-    };
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
+  }, []);
 
-    loadData();
+  const loadCustomersData = useCallback(async () => {
+    try {
+      const customersData = await getCustomers();
+      if (customersData.success) {
+        setCustomers(customersData.customers);
+      }
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  }, []);
+
+  const loadSellersData = useCallback(async () => {
+    try {
+      const sellersData = await getSellers();
+      if (sellersData.success) {
+        setSellers(sellersData.sellers);
+      }
+    } catch (error) {
+      console.error('Error loading sellers:', error);
+    }
+  }, []);
+
+  const loadRidersData = useCallback(async () => {
+    try {
+      const ridersData = await getRiders();
+      if (ridersData.success) {
+        setRiders(ridersData.riders);
+      }
+    } catch (error) {
+      console.error('Error loading riders:', error);
+    }
+  }, []);
+
+  const [ordersPagination, setOrdersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalOrders: 0,
+    ordersPerPage: 10
+  });
+
+  const loadOrdersData = useCallback(async () => {
+    try {
+      const [ordersData, buyerOrdersData] = await Promise.all([
+        getOrders(),
+        getAdminBuyerOrders(ordersPagination.currentPage, ordersPagination.ordersPerPage)
+      ]);
+
+      let allOrders = [];
+      
+      if (ordersData.success) {
+        allOrders = [...ordersData.orders];
+      }
+
+      // Update pagination info
+      if (buyerOrdersData.pagination) {
+        setOrdersPagination(buyerOrdersData.pagination);
+      }
+
+      // Merge buyer orders with old orders for comprehensive view
+      if (buyerOrdersData.success) {
+        const buyerOrders = buyerOrdersData.orders.map(order => ({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customer: order.customerName,
+          amount: order.total,
+          status: order.status,
+          date: order.date,
+          deliveryPerson: order.deliveryPerson,
+          deliveryStatus: order.deliveryStatus,
+          statusHistory: order.statusHistory,
+          proofOfDelivery: order.proofOfDelivery,
+          proofOfDeliveryImages: order.proofOfDeliveryImages,
+          deliveredAt: order.deliveredAt,
+          items: order.items
+        }));
+        allOrders = [...buyerOrders, ...allOrders];
+      }
+
+      setOrders(allOrders);
+    } catch (error) {
+      console.error('Error loading orders:', error);
+    }
+  }, []);
+
+  const loadDeliveryPersonsData = useCallback(async () => {
+    try {
+      const deliveryPersonsData = await getAdminDeliveryPersons();
+      if (deliveryPersonsData.success) {
+        setDeliveryPersons(deliveryPersonsData.deliveryPersons);
+      }
+    } catch (error) {
+      console.error('Error loading delivery persons:', error);
+    }
+  }, []);
+
+  const loadProfileData = useCallback(async () => {
+    try {
+      const profileData = await getAdminProfile();
+      if (profileData.success) {
+        setAdminProfile(profileData.profile);
+        if (profileData.profile.photo) {
+          setProfilePhotoPreview(profileData.profile.photo);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  }, []);
+
+  // Define data loaders for each section
+  const dataLoaders = useMemo(() => ({
+    dashboard: [loadProductsData, loadCustomersData, loadSellersData, loadOrdersData],
+    products: [loadProductsData],
+    orders: [loadOrdersData, loadDeliveryPersonsData],
+    customers: [loadCustomersData],
+    sellers: [loadSellersData],
+    riders: [loadRidersData],
+    'profile-settings': [loadProfileData],
+    'account-settings': [loadProfileData]
+  }), [loadProductsData, loadCustomersData, loadSellersData, loadRidersData, loadOrdersData, loadDeliveryPersonsData, loadProfileData]);
+
+  // Use lazy loading hook
+  const { isLoading, isSectionLoaded, canRenderSection, canNavigate, reloadSection, initialLoadComplete, loadingRef } = useLazyDashboardData(
+    currentPage,
+    dataLoaders
+  );
+
+  // Navigation handler - prevent navigation while loading
+  const handleNavigate = useCallback((page) => {
+    // Use ref for immediate check to prevent race conditions
+    if (loadingRef.current || isLoading) {
+      console.log('⏸️ Navigation blocked - loading in progress');
+      return;
+    }
+    console.log(`✅ Navigating to: ${page}`);
+    setCurrentPage(page);
+  }, [isLoading, loadingRef]);
+
+  // Initialize on mount
+  useEffect(() => {
+    loadNotificationCount();
+    generateActivityLog();
 
     // Initialize reveal animations
     setTimeout(() => {
@@ -134,10 +272,52 @@ const AdminDashboard = () => {
         el.classList.add('in-view');
       });
     }, 100);
+
+    // Refresh notification count every 30 seconds
+    const notificationInterval = setInterval(loadNotificationCount, 30000);
+    return () => clearInterval(notificationInterval);
   }, []);
 
-  // Combined loading check - show loading if either profile or initial data is loading
-  const isLoading = isLoadingProfile;
+  // Load notification count
+  const loadNotificationCount = async () => {
+    try {
+      const response = await getAdminUnreadCount();
+      if (response.success) {
+        setNotificationCount(response.count);
+      }
+    } catch (error) {
+      console.error('Error loading notification count:', error);
+    }
+  };
+
+  // Generate activity log from recent data
+  const generateActivityLog = () => {
+    const activities = [];
+    
+    // Recent orders
+    orders.slice(-5).forEach(order => {
+      activities.push({
+        type: 'order_created',
+        title: `New order ${order.orderNumber}`,
+        description: `Order from ${order.customer} - ₱${order.amount}`,
+        timestamp: order.date || order.createdAt
+      });
+    });
+
+    // Recent products
+    products.slice(-3).forEach(product => {
+      activities.push({
+        type: 'product_added',
+        title: `Product added: ${product.name}`,
+        description: `${product.category} - ₱${product.price}`,
+        timestamp: product.createdAt
+      });
+    });
+
+    // Sort by timestamp
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    setActivityLog(activities);
+  };
 
   // Load admin profile from localStorage on mount
   useEffect(() => {
@@ -167,9 +347,9 @@ const AdminDashboard = () => {
     navigate('/');
   };
 
-  // Navigation handler
+  // Navigation handler - prevent navigation while loading
   const navigateTo = (page) => {
-    setCurrentPage(page);
+    handleNavigate(page);
     setIsSidebarOpen(false);
   };
 
@@ -377,8 +557,73 @@ const AdminDashboard = () => {
   };
 
   // Calculate statistics
-  const totalSales = orders.reduce((sum, order) => sum + (order.status === 'Completed' ? order.amount : 0), 0);
+  const totalSales = orders.reduce((sum, order) => sum + (order.status === 'Completed' || order.status === 'Delivered' ? order.amount : 0), 0);
   const lowStockProducts = products.filter(p => p.stock <= 10);
+  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+  const activeDeliveries = orders.filter(o => o.status === 'Out for Delivery' || o.deliveryStatus === 'In Transit').length;
+
+  // Calculate trends (mock data - in real app, compare with previous period)
+  const salesTrend = { trend: 'up', value: '+12.5%' };
+  const ordersTrend = { trend: 'up', value: '+8.3%' };
+  const productsTrend = { trend: 'neutral', value: '0%' };
+  const usersTrend = { trend: 'up', value: '+5.2%' };
+
+  // Analytics data
+  const orderStatusData = [
+    { label: 'Pending', value: orders.filter(o => o.status === 'Pending').length },
+    { label: 'Confirmed', value: orders.filter(o => o.status === 'Confirmed').length },
+    { label: 'Preparing', value: orders.filter(o => o.status === 'Preparing').length },
+    { label: 'Processing', value: orders.filter(o => o.status === 'Processing').length },
+    { label: 'Out for Delivery', value: orders.filter(o => o.status === 'Out for Delivery').length },
+    { label: 'Delivered', value: orders.filter(o => o.status === 'Delivered' || o.status === 'Completed').length },
+    { label: 'Cancelled', value: orders.filter(o => o.status === 'Cancelled').length }
+  ].filter(item => item.value > 0); // Only show statuses with orders
+
+  // Calculate top products based on actual sales from orders
+  const productSalesMap = {};
+  orders.forEach(order => {
+    if (order.items && Array.isArray(order.items)) {
+      order.items.forEach(item => {
+        const productId = item.productId || item.id;
+        const productName = item.name || item.productName;
+        if (productName) {
+          if (!productSalesMap[productName]) {
+            productSalesMap[productName] = {
+              name: productName,
+              quantity: 0,
+              revenue: 0
+            };
+          }
+          productSalesMap[productName].quantity += item.quantity || 0;
+          productSalesMap[productName].revenue += (item.price || 0) * (item.quantity || 0);
+        }
+      });
+    }
+  });
+
+  const topProducts = Object.values(productSalesMap)
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5)
+    .map(p => ({ 
+      label: p.name, 
+      value: p.quantity,
+      revenue: p.revenue 
+    }));
+
+  // Calculate category data based on products with sales
+  const categoryData = [...new Set(products.map(p => p.category))].map(cat => {
+    const categoryProducts = products.filter(p => p.category === cat);
+    const categorySales = categoryProducts.reduce((sum, product) => {
+      const productSales = productSalesMap[product.name];
+      return sum + (productSales ? productSales.quantity : 0);
+    }, 0);
+    
+    return {
+      label: cat,
+      value: categoryProducts.length,
+      sales: categorySales
+    };
+  }).filter(cat => cat.value > 0); // Only show categories with products
 
   // Get status color
   // Use imported utility function
@@ -447,6 +692,103 @@ const AdminDashboard = () => {
   const categories = [...new Set(products.map(p => p.category))];
   const vehicleTypes = [...new Set(riders.map(r => r.vehicleType).filter(Boolean))];
 
+  // Bulk actions handler
+  const handleBulkAction = async (action, items, newStatus) => {
+    try {
+      if (action === 'delete') {
+        // Delete selected items
+        for (const itemId of items) {
+          if (bulkActionType === 'products') {
+            await deleteProduct(itemId);
+          } else if (bulkActionType === 'orders') {
+            await deleteOrder(itemId);
+          }
+        }
+        showToast(`${items.length} ${bulkActionType} deleted successfully!`, 'success');
+      } else if (action === 'update_status' && bulkActionType === 'orders') {
+        // Update order status
+        for (const itemId of items) {
+          await updateOrderStatus(itemId, newStatus);
+        }
+        showToast(`${items.length} orders updated successfully!`, 'success');
+      } else if (action === 'export') {
+        // Export to CSV
+        exportToCSV(items, bulkActionType);
+        showToast('Data exported successfully!', 'success');
+      }
+
+      // Refresh data
+      const refreshData = async () => {
+        if (bulkActionType === 'products') {
+          const productsData = await getProducts();
+          if (productsData.success) setProducts(productsData.products);
+        } else if (bulkActionType === 'orders') {
+          const ordersData = await getOrders();
+          if (ordersData.success) setOrders(ordersData.orders);
+        }
+      };
+      await refreshData();
+      setSelectedItems([]);
+    } catch (error) {
+      console.error('Bulk action error:', error);
+      showToast('Failed to perform bulk action', 'error');
+    }
+  };
+
+  // Export to CSV
+  const exportToCSV = (itemIds, type) => {
+    let data = [];
+    let headers = [];
+
+    if (type === 'products') {
+      data = products.filter(p => itemIds.includes(p.id));
+      headers = ['SKU', 'Name', 'Category', 'Price', 'Stock', 'Seller'];
+      const csvContent = [
+        headers.join(','),
+        ...data.map(p => [p.sku, p.name, p.category, p.price, p.stock, p.seller].join(','))
+      ].join('\n');
+      downloadCSV(csvContent, 'products.csv');
+    } else if (type === 'orders') {
+      data = orders.filter(o => itemIds.includes(o.id));
+      headers = ['Order Number', 'Customer', 'Amount', 'Status', 'Date'];
+      const csvContent = [
+        headers.join(','),
+        ...data.map(o => [o.orderNumber, o.customer, o.amount, o.status, new Date(o.date).toLocaleDateString()].join(','))
+      ].join('\n');
+      downloadCSV(csvContent, 'orders.csv');
+    }
+  };
+
+  const downloadCSV = (content, filename) => {
+    const blob = new Blob([content], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Toggle item selection
+  const toggleItemSelection = (itemId) => {
+    setSelectedItems(prev =>
+      prev.includes(itemId)
+        ? prev.filter(id => id !== itemId)
+        : [...prev, itemId]
+    );
+  };
+
+  // Select all items
+  const selectAllItems = (items) => {
+    if (selectedItems.length === items.length) {
+      setSelectedItems([]);
+    } else {
+      setSelectedItems(items.map(item => item.id));
+    }
+  };
+
   // Handle profile photo change
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -510,13 +852,33 @@ const AdminDashboard = () => {
     });
   };
 
-  // Show loading state while profile is being fetched
-  if (isLoading) {
+  // Show loading state only while initial profile is being fetched
+  if (isLoadingProfile) {
     return (
-      <div className="font-inter text-gray-800 bg-gradient-to-b from-white to-gray-50 min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="font-inter text-gray-800 bg-gradient-to-b from-white to-gray-50 min-h-screen">
+        <div className="h-20 bg-white border-b border-gray-200 animate-pulse">
+          <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
+            <div className="h-8 bg-gray-200 rounded w-32"></div>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+        <div className="flex h-[calc(100vh-80px)]">
+          <div className="w-64 bg-white border-r border-gray-200 p-4 space-y-2">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="stat-card" count={4} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -524,11 +886,17 @@ const AdminDashboard = () => {
 
   return (
     <div className="font-inter text-gray-800 bg-gradient-to-b from-white to-gray-50 min-h-screen">
+      {/* Loading Progress Bar */}
+      <LoadingProgressBar isLoading={isLoading} />
+      
       {/* Header */}
       <DashboardNavbar
         userType="admin"
         onLogout={handleLogout}
-        onNavigate={setCurrentPage}
+        onNavigate={(page) => {
+          setCurrentPage(page);
+          loadNotificationCount();
+        }}
         adminPhoto={adminProfile?.photo}
         adminName={adminProfile?.fullName || adminProfile?.username}
         adminEmail={adminProfile?.email}
@@ -545,6 +913,7 @@ const AdminDashboard = () => {
           userType="admin"
           userData={adminProfile}
           isMobileMenuOpen={isMobileMenuOpen}
+          isLoading={isLoading}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
         />
 
@@ -553,35 +922,235 @@ const AdminDashboard = () => {
           <div key={currentPage}>
             <h1 className="text-xl font-bold mb-4 mt-12 lg:mt-0">{getPageTitle()}</h1>
 
-            {/* Dashboard Page */}
-            {currentPage === 'dashboard' && (
-              <div className="space-y-4">
-                {/* Statistics Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-                  <div className="card p-4 text-center reveal">
-                    <p className="text-gray-500">Total Sales</p>
-                    <p className="text-2xl font-extrabold text-rose-600">₱{totalSales.toLocaleString()}</p>
-                  </div>
-                  <div className="card p-4 text-center reveal" style={{ transitionDelay: '0.05s' }}>
-                    <p className="text-gray-500">Orders</p>
-                    <p className="text-2xl font-extrabold">{orders.length}</p>
-                  </div>
-                  <div className="card p-4 text-center reveal" style={{ transitionDelay: '0.1s' }}>
-                    <p className="text-gray-500">Products</p>
-                    <p className="text-2xl font-extrabold">{products.length}</p>
-                  </div>
-                  <div className="card p-4 text-center reveal" style={{ transitionDelay: '0.15s' }}>
-                    <p className="text-gray-500">Sellers</p>
-                    <p className="text-2xl font-extrabold">{sellers.length}</p>
-                  </div>
-                  <div className="card p-4 text-center reveal" style={{ transitionDelay: '0.2s' }}>
-                    <p className="text-gray-500">Riders</p>
-                    <p className="text-2xl font-extrabold">{riders.length}</p>
-                  </div>
+            {/* Loading State */}
+            {!canRenderSection(currentPage) ? (
+              <div className="space-y-6">
+                {currentPage === 'dashboard' && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <SkeletonLoader variant="stat-card" count={4} />
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <SkeletonLoader variant="chart" count={2} />
+                    </div>
+                  </>
+                )}
+                {currentPage === 'products' && (
+                  <>
+                    <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      <SkeletonLoader variant="product-card" count={8} />
+                    </div>
+                  </>
+                )}
+                {currentPage === 'orders' && (
+                  <>
+                    <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+                    <div className="space-y-4">
+                      <SkeletonLoader variant="order-card" count={6} />
+                    </div>
+                  </>
+                )}
+                {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers') && (
+                  <>
+                    <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <SkeletonLoader variant="user-card" count={6} />
+                    </div>
+                  </>
+                )}
+                {(currentPage === 'profile-settings' || currentPage === 'account-settings') && (
+                  <SkeletonLoader variant="profile" count={1} />
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Dashboard Page */}
+                {currentPage === 'dashboard' && (
+              <div className="space-y-6">
+                {/* Quick Actions */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const [productsRefresh, ordersRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+                          getProducts(),
+                          getOrders(),
+                          getSellers(),
+                          getRiders(),
+                          getCustomers()
+                        ]);
+                        if (productsRefresh.success) setProducts(productsRefresh.products);
+                        if (ordersRefresh.success) setOrders(ordersRefresh.orders);
+                        if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
+                        if (ridersRefresh.success) setRiders(ridersRefresh.riders);
+                        if (customersRefresh.success) setCustomers(customersRefresh.customers);
+                        showToast('Dashboard refreshed!', 'success');
+                      } catch (error) {
+                        console.error('Refresh error:', error);
+                        showToast('Failed to refresh dashboard', 'error');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
+                  >
+                    🔄 Refresh
+                  </button>
+                  <button
+                    onClick={() => setShowAnalytics(!showAnalytics)}
+                    className={`inline-flex items-center gap-2 py-2 px-4 rounded-lg ${
+                      showAnalytics ? 'bg-rose-500 text-white' : 'bg-white border hover:bg-gray-50'
+                    }`}
+                  >
+                    📊 {showAnalytics ? 'Hide' : 'Show'} Analytics
+                  </button>
+                  <button
+                    onClick={() => {
+                      try {
+                        exportDashboardSummary({
+                          statistics: {
+                            totalProducts: products.length,
+                            totalOrders: orders.length,
+                            totalSellers: sellers.length,
+                            totalRiders: riders.length,
+                            totalCustomers: customers.length,
+                            totalSales: totalSales,
+                            lowStockProducts: lowStockProducts.length,
+                            pendingOrders: pendingOrders,
+                            activeDeliveries: activeDeliveries
+                          },
+                          products,
+                          orders,
+                          sellers,
+                          riders,
+                          customers,
+                          lowStockProducts,
+                          topProducts,
+                          orderStatusData,
+                          categoryData
+                        });
+                        showToast('Dashboard summary exported to Excel!', 'success');
+                      } catch (error) {
+                        console.error('Export error:', error);
+                        showToast('Failed to export summary', 'error');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
+                  >
+                    📊 Export to Excel
+                  </button>
                 </div>
 
-                {/* Recent Activity */}
-                <div className="grid md:grid-cols-2 gap-4">
+                {/* Statistics Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                  <StatisticsCard
+                    title="Total Sales"
+                    value={`₱${totalSales.toLocaleString()}`}
+                    icon="💰"
+                    trend={salesTrend.trend}
+                    trendValue={salesTrend.value}
+                    color="rose"
+                    delay={0}
+                  />
+                  <StatisticsCard
+                    title="Total Orders"
+                    value={orders.length}
+                    icon="📦"
+                    trend={ordersTrend.trend}
+                    trendValue={ordersTrend.value}
+                    color="blue"
+                    delay={0.05}
+                  />
+                  <StatisticsCard
+                    title="Products"
+                    value={products.length}
+                    icon="🏷️"
+                    trend={productsTrend.trend}
+                    trendValue={productsTrend.value}
+                    color="green"
+                    delay={0.1}
+                  />
+                  <StatisticsCard
+                    title="Pending Orders"
+                    value={pendingOrders}
+                    icon="⏳"
+                    color="yellow"
+                    delay={0.15}
+                  />
+                  <StatisticsCard
+                    title="Active Deliveries"
+                    value={activeDeliveries}
+                    icon="🚚"
+                    color="purple"
+                    delay={0.2}
+                  />
+                  <StatisticsCard
+                    title="Total Users"
+                    value={sellers.length + riders.length + customers.length}
+                    icon="👥"
+                    trend={usersTrend.trend}
+                    trendValue={usersTrend.value}
+                    color="orange"
+                    delay={0.25}
+                  />
+                </div>
+
+                {/* Analytics Section */}
+                {showAnalytics && (
+                  <>
+                    {/* Sales Summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div className="card p-4 text-center">
+                        <p className="text-sm text-gray-600 mb-1">Total Products Sold</p>
+                        <p className="text-2xl font-bold text-blue-600">
+                          {Object.values(productSalesMap).reduce((sum, p) => sum + p.quantity, 0)}
+                        </p>
+                      </div>
+                      <div className="card p-4 text-center">
+                        <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          ₱{Object.values(productSalesMap).reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="card p-4 text-center">
+                        <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
+                        <p className="text-2xl font-bold text-purple-600">
+                          ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || o.total || 0), 0) / orders.length).toFixed(2) : '0'}
+                        </p>
+                      </div>
+                      <div className="card p-4 text-center">
+                        <p className="text-sm text-gray-600 mb-1">Unique Products Sold</p>
+                        <p className="text-2xl font-bold text-orange-600">
+                          {Object.keys(productSalesMap).length}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <AnalyticsChart
+                        title="Order Status Distribution"
+                        data={orderStatusData}
+                        type="bar"
+                        color="blue"
+                      />
+                      <AnalyticsChart
+                        title="Top 5 Products by Sales"
+                        data={topProducts.length > 0 ? topProducts : [{ label: 'No sales yet', value: 0 }]}
+                        type="bar"
+                        color="green"
+                      />
+                      <AnalyticsChart
+                        title="Products by Category"
+                        data={categoryData.length > 0 ? categoryData : [{ label: 'No products yet', value: 0 }]}
+                        type="bar"
+                        color="orange"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Recent Activity & Low Stock */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <ActivityLog activities={activityLog} limit={8} />
                   <div className="card p-6 hover-animate reveal">
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-lg font-semibold">Recent Orders</h2>
@@ -645,8 +1214,43 @@ const AdminDashboard = () => {
             {currentPage === 'products' && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-lg font-semibold">Products</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold">Products</h3>
+                    {selectedItems.length > 0 && (
+                      <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
+                        {selectedItems.length} selected
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const productsData = await getProducts();
+                          if (productsData.success) {
+                            setProducts(productsData.products);
+                            showToast('Products refreshed!', 'success');
+                          }
+                        } catch (error) {
+                          console.error('Refresh error:', error);
+                          showToast('Failed to refresh products', 'error');
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                    >
+                      🔄 Refresh
+                    </button>
+                    {selectedItems.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setBulkActionType('products');
+                          setIsBulkActionsModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
+                      >
+                        ⚡ Bulk Actions
+                      </button>
+                    )}
                     <input
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
@@ -680,9 +1284,18 @@ const AdminDashboard = () => {
                     <table className="min-w-full">
                       <thead className="text-left text-sm border-b">
                         <tr>
+                          <th className="p-3 w-[50px]">
+                            <input
+                              type="checkbox"
+                              checked={selectedItems.length === getFilteredProducts().length && getFilteredProducts().length > 0}
+                              onChange={() => selectAllItems(getFilteredProducts())}
+                              className="w-4 h-4 rounded border-gray-300"
+                            />
+                          </th>
                           <th className="p-3 w-[120px]">SKU</th>
                           <th className="p-3">Name</th>
                           <th className="p-3 w-[140px]">Category</th>
+                          <th className="p-3 w-[120px]">Seller</th>
                           <th className="p-3 w-[100px]">Price</th>
                           <th className="p-3 w-[90px]">Stock</th>
                           <th className="p-3 w-[120px]">Actions</th>
@@ -693,6 +1306,14 @@ const AdminDashboard = () => {
                           .slice(currentProductPage * itemsPerPage, (currentProductPage + 1) * itemsPerPage)
                           .map(product => (
                             <tr key={product.id} className="border-b hover:bg-gray-50">
+                              <td className="p-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItems.includes(product.id)}
+                                  onChange={() => toggleItemSelection(product.id)}
+                                  className="w-4 h-4 rounded border-gray-300"
+                                />
+                              </td>
                               <td className="p-3">{product.sku}</td>
                               <td className="p-3">
                                 <div className="flex items-center gap-3">
@@ -712,6 +1333,11 @@ const AdminDashboard = () => {
                                 </div>
                               </td>
                               <td className="p-3">{product.category}</td>
+                              <td className="p-3">
+                                <span className="text-sm text-gray-600">
+                                  {product.seller || product.sellerName || 'N/A'}
+                                </span>
+                              </td>
                               <td className="p-3">₱{product.price}</td>
                               <td className="p-3">
                                 <span className={`chip ${product.stock <= 10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
@@ -782,8 +1408,43 @@ const AdminDashboard = () => {
             {currentPage === 'orders' && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-lg font-semibold">Orders</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold">Orders</h3>
+                    {selectedItems.length > 0 && (
+                      <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
+                        {selectedItems.length} selected
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const ordersData = await getOrders();
+                          if (ordersData.success) {
+                            setOrders(ordersData.orders);
+                            showToast('Orders refreshed!', 'success');
+                          }
+                        } catch (error) {
+                          console.error('Refresh error:', error);
+                          showToast('Failed to refresh orders', 'error');
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                    >
+                      🔄 Refresh
+                    </button>
+                    {selectedItems.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setBulkActionType('orders');
+                          setIsBulkActionsModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
+                      >
+                        ⚡ Bulk Actions
+                      </button>
+                    )}
                     <input
                       value={orderSearch}
                       onChange={(e) => setOrderSearch(e.target.value)}
@@ -819,6 +1480,14 @@ const AdminDashboard = () => {
                     <table className="min-w-full">
                       <thead className="text-left text-sm border-b">
                         <tr>
+                          <th className="p-3 w-[50px]">
+                            <input
+                              type="checkbox"
+                              checked={selectedItems.length === getFilteredOrders().length && getFilteredOrders().length > 0}
+                              onChange={() => selectAllItems(getFilteredOrders())}
+                              className="w-4 h-4 rounded border-gray-300"
+                            />
+                          </th>
                           <th className="p-3 w-[240px]">Order #</th>
                           <th className="p-3">Customer</th>
                           <th className="p-3 w-[120px]">Amount</th>
@@ -840,13 +1509,23 @@ const AdminDashboard = () => {
                             .map(order => (
                               <tr 
                                 key={order.id} 
-                                className={`border-b hover:shadow-md cursor-pointer transition-all ${getStatusBackgroundColor(getDisplayStatus(order))}`}
-                                onClick={() => {
-                                  setSelectedOrderForTracking(order);
-                                  setShowOrderTrackingModal(true);
-                                }}
+                                className={`border-b hover:shadow-md transition-all ${getStatusBackgroundColor(getDisplayStatus(order))}`}
                               >
-                                <td className="p-3">
+                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedItems.includes(order.id)}
+                                    onChange={() => toggleItemSelection(order.id)}
+                                    className="w-4 h-4 rounded border-gray-300"
+                                  />
+                                </td>
+                                <td 
+                                  className="p-3 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedOrderForTracking(order);
+                                    setShowOrderTrackingModal(true);
+                                  }}
+                                >
                                   <div>
                                     <p className="font-medium">{order.orderNumber || 'N/A'}</p>
                                     {order.deliveryPerson && (
@@ -856,14 +1535,38 @@ const AdminDashboard = () => {
                                     )}
                                   </div>
                                 </td>
-                                <td className="p-3">{order.customer || 'N/A'}</td>
-                                <td className="p-3">₱{(order.amount || 0).toLocaleString()}</td>
-                                <td className="p-3">
+                                <td 
+                                  className="p-3 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedOrderForTracking(order);
+                                    setShowOrderTrackingModal(true);
+                                  }}
+                                >{order.customer || 'N/A'}</td>
+                                <td 
+                                  className="p-3 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedOrderForTracking(order);
+                                    setShowOrderTrackingModal(true);
+                                  }}
+                                >₱{(order.amount || 0).toLocaleString()}</td>
+                                <td 
+                                  className="p-3 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedOrderForTracking(order);
+                                    setShowOrderTrackingModal(true);
+                                  }}
+                                >
                                   <span className={`chip ${getStatusColor(getDisplayStatus(order))}`}>
                                     {getStatusIcon(getDisplayStatus(order))} {getDisplayStatus(order)}
                                   </span>
                                 </td>
-                                <td className="p-3">{order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}</td>
+                                <td 
+                                  className="p-3 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedOrderForTracking(order);
+                                    setShowOrderTrackingModal(true);
+                                  }}
+                                >{order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}</td>
                                 <td className="p-3" onClick={(e) => e.stopPropagation()}>
                                   <div className="flex gap-1">
                                     <button
@@ -941,8 +1644,61 @@ const AdminDashboard = () => {
             {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers') && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-lg font-semibold capitalize">{currentPage}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold capitalize">{currentPage}</h3>
+                    {currentPage === 'riders' && (
+                      <div className="group relative">
+                        <button className="text-blue-500 hover:text-blue-600 text-sm">
+                          ℹ️
+                        </button>
+                        <div className="hidden group-hover:block absolute left-0 top-6 z-10 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+                          <p className="font-semibold text-gray-800 mb-2">📋 Rider Status Guide</p>
+                          <div className="space-y-2 text-gray-600">
+                            <p><span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span> <strong>Active:</strong> Can be assigned deliveries</p>
+                            <p><span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-1"></span> <strong>Inactive:</strong> Cannot be assigned</p>
+                            <p><span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-1"></span> <strong>Available:</strong> Ready for new deliveries</p>
+                            <p><span className="inline-block w-2 h-2 bg-gray-500 rounded-full mr-1"></span> <strong>Unavailable:</strong> Busy or offline</p>
+                            <p className="mt-2 pt-2 border-t text-yellow-700">
+                              💡 <strong>Note:</strong> Only riders who are both Active AND Available will appear in the "Assign Delivery" modal.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          let data;
+                          if (currentPage === 'sellers') {
+                            data = await getSellers();
+                            if (data.success) {
+                              setSellers(data.sellers);
+                              showToast('Sellers refreshed!', 'success');
+                            }
+                          } else if (currentPage === 'riders') {
+                            data = await getRiders();
+                            if (data.success) {
+                              setRiders(data.riders);
+                              showToast('Riders refreshed!', 'success');
+                            }
+                          } else {
+                            data = await getCustomers();
+                            if (data.success) {
+                              setCustomers(data.customers);
+                              showToast('Customers refreshed!', 'success');
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Refresh error:', error);
+                          showToast(`Failed to refresh ${currentPage}`, 'error');
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                    >
+                      🔄 Refresh
+                    </button>
                     {/* Search Input */}
                     <input
                       value={
@@ -1004,9 +1760,56 @@ const AdminDashboard = () => {
                     (currentPage === 'sellers' ? getFilteredSellers() :
                       currentPage === 'riders' ? getFilteredRiders() :
                         getFilteredCustomers()).map(user => (
-                          <div key={user.id} className="card p-4 hover-animate">
+                         <div key={user.id} className="card p-4 hover-animate relative">
+                            {/* Account Status Indicator for all user types */}
+                            <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                (user.isActive !== undefined ? user.isActive : true)
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                <span className={`w-2 h-2 rounded-full ${
+                                  (user.isActive !== undefined ? user.isActive : true) ? 'bg-green-500' : 'bg-red-500'
+                                }`}></span>
+                                {(user.isActive !== undefined ? user.isActive : true) ? 'Active' : 'Inactive'}
+                              </span>
+                              {/* Availability Status for Riders only */}
+                              {currentPage === 'riders' && (
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                  (user.isAvailable !== undefined ? user.isAvailable : true)
+                                    ? 'bg-blue-100 text-blue-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  <span className={`w-2 h-2 rounded-full ${
+                                    (user.isAvailable !== undefined ? user.isAvailable : true) ? 'bg-blue-500' : 'bg-gray-500'
+                                  }`}></span>
+                                  {(user.isAvailable !== undefined ? user.isAvailable : true) ? 'Available' : 'Unavailable'}
+                                </span>
+                              )}
+                            </div>
+                            
                             <div className="flex items-center gap-3 mb-3">
-                              <img src={user.image} alt={user.name} className="w-12 h-12 rounded-full object-cover" />
+                              <div className={`w-12 h-12 rounded-full overflow-hidden flex items-center justify-center border-2 ${
+                                currentPage === 'sellers' 
+                                  ? 'bg-rose-50 border-rose-500' 
+                                  : currentPage === 'riders' 
+                                  ? 'bg-blue-50 border-blue-500' 
+                                  : 'bg-purple-50 border-purple-500'
+                              }`}>
+                                {user.image ? (
+                                  <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className={`text-2xl font-semibold ${
+                                    currentPage === 'sellers' 
+                                      ? 'text-rose-600' 
+                                      : currentPage === 'riders' 
+                                      ? 'text-blue-600' 
+                                      : 'text-purple-600'
+                                  }`}>
+                                    {currentPage === 'sellers' ? '🏪' : currentPage === 'riders' ? '🚚' : '👤'}
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex-1">
                                 <h4 className="font-semibold">{user.name}</h4>
                                 <p className="text-sm text-gray-600">{user.email}</p>
@@ -1018,6 +1821,7 @@ const AdminDashboard = () => {
                               <button
                                 onClick={() => {
                                   setEditingItem(user);
+                                  setEditedUserData(user);
                                   setCurrentUserType(currentPage.slice(0, -1));
                                   setIsUserModalOpen(true);
                                 }}
@@ -1025,6 +1829,54 @@ const AdminDashboard = () => {
                               >
                                 Edit
                               </button>
+                               {(currentPage === 'riders' || currentPage === 'sellers' || currentPage === 'customers') && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const currentStatus = user.isActive !== undefined ? user.isActive : true;
+                                      const newStatus = !currentStatus;
+                                      const userType = currentPage; // 'riders', 'sellers', or 'customers'
+                                      
+                                      // Call API to toggle status
+                                      const response = await toggleUserStatus(userType, user.id, newStatus);
+                                      
+                                      if (response.success) {
+                                        // Refresh the data from server to ensure consistency
+                                        let refreshData;
+                                        if (currentPage === 'riders') {
+                                          refreshData = await getRiders();
+                                          if (refreshData.success) {
+                                            setRiders(refreshData.riders);
+                                          }
+                                        } else if (currentPage === 'sellers') {
+                                          refreshData = await getSellers();
+                                          if (refreshData.success) {
+                                            setSellers(refreshData.sellers);
+                                          }
+                                        } else if (currentPage === 'customers') {
+                                          refreshData = await getCustomers();
+                                          if (refreshData.success) {
+                                            setCustomers(refreshData.customers);
+                                          }
+                                        }
+                                        
+                                        const userTypeName = currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1);
+                                        showToast(`${userTypeName} ${newStatus ? 'activated' : 'deactivated'} successfully!`, 'success');
+                                      }
+                                    } catch (error) {
+                                      console.error('Toggle status error:', error);
+                                      showToast(`Failed to update ${currentPage.slice(0, -1)} status`, 'error');
+                                    }
+                                  }}
+                                  className={`flex-1 py-2 px-3 rounded-lg text-sm ${
+                                    (user.isActive !== undefined ? user.isActive : true)
+                                      ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' 
+                                      : 'bg-green-50 text-green-700 hover:bg-green-100'
+                                  }`}
+                                >
+                                  {(user.isActive !== undefined ? user.isActive : true) ? 'Deactivate' : 'Activate'}
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   const userType = currentPage.slice(0, -1);
@@ -1057,32 +1909,38 @@ const AdminDashboard = () => {
                 <p className="text-gray-600 mb-4">Export summarized metrics as JSON.</p>
                 <button
                   onClick={() => {
-                    const summary = {
-                      timestamp: new Date().toISOString(),
-                      statistics: {
-                        totalProducts: products.length,
-                        totalOrders: orders.length,
-                        totalSellers: sellers.length,
-                        totalRiders: riders.length,
-                        totalCustomers: customers.length,
-                        totalSales: totalSales,
-                        lowStockProducts: lowStockProducts.length
-                      }
-                    };
-                    const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `pasalubong-summary-${new Date().toISOString().split('T')[0]}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    showToast('Summary report exported successfully!', 'success');
+                    try {
+                      exportDashboardSummary({
+                        statistics: {
+                          totalProducts: products.length,
+                          totalOrders: orders.length,
+                          totalSellers: sellers.length,
+                          totalRiders: riders.length,
+                          totalCustomers: customers.length,
+                          totalSales: totalSales,
+                          lowStockProducts: lowStockProducts.length,
+                          pendingOrders: pendingOrders,
+                          activeDeliveries: activeDeliveries
+                        },
+                        products,
+                        orders,
+                        sellers,
+                        riders,
+                        customers,
+                        lowStockProducts,
+                        topProducts,
+                        orderStatusData,
+                        categoryData
+                      });
+                      showToast('Summary report exported to Excel!', 'success');
+                    } catch (error) {
+                      console.error('Export error:', error);
+                      showToast('Failed to export summary', 'error');
+                    }
                   }}
                   className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
                 >
-                  ⬇️ Download Summary
+                  📊 Download Excel Report
                 </button>
               </div>
             )}
@@ -1093,7 +1951,7 @@ const AdminDashboard = () => {
                 userType="admin"
                 userData={adminProfile}
                 onUpdate={handleProfileUpdate}
-                onCancel={() => setCurrentPage('dashboard')}
+                onCancel={() => handleNavigate('dashboard')}
               />
             )}
 
@@ -1105,8 +1963,10 @@ const AdminDashboard = () => {
                 onUpdateEmail={handleEmailUpdate}
                 onUpdatePhone={handlePhoneUpdate}
                 onUpdatePassword={handlePasswordUpdate}
-                onCancel={() => setCurrentPage('dashboard')}
+                onCancel={() => handleNavigate('dashboard')}
               />
+            )}
+              </>
             )}
 
             {/* Settings Page */}
@@ -1119,7 +1979,7 @@ const AdminDashboard = () => {
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo</label>
                     <div className="flex items-center gap-4">
-                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
+                      <div className="w-24 h-24 rounded-full overflow-hidden bg-rose-50 border-2 border-rose-500 flex items-center justify-center">
                         {profilePhotoPreview ? (
                           <img
                             src={profilePhotoPreview}
@@ -1127,7 +1987,7 @@ const AdminDashboard = () => {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <span className="text-4xl text-gray-400">⚙️</span>
+                          <span className="text-rose-600 text-5xl font-semibold">⚙️</span>
                         )}
                       </div>
                       <div className="flex-1">
@@ -1322,95 +2182,228 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            {editingItem && (
+            {editingItem && editedUserData && (
               <div className="space-y-4">
                 <div className="flex items-center gap-4 mb-4">
-                  <img src={editingItem.image} alt={editingItem.name} className="w-20 h-20 rounded-full object-cover" />
-                  <div>
-                    <h4 className="text-xl font-semibold">{editingItem.name}</h4>
-                    <p className="text-sm text-gray-600">{editingItem.email}</p>
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center border-2 border-gray-300">
+                    {editedUserData.image || editedUserData.photo ? (
+                      <img src={editedUserData.image || editedUserData.photo} alt={editedUserData.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-gray-600 text-3xl font-semibold">
+                        {currentUserType === 'customer' ? '👤' : currentUserType === 'seller' ? '🏪' : currentUserType === 'rider' ? '🚚' : '👤'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-xl font-semibold">{editedUserData.name || editedUserData.fullName}</h4>
+                    <p className="text-sm text-gray-600">{editedUserData.email}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                        {currentUserType.charAt(0).toUpperCase() + currentUserType.slice(1)}
+                      </span>
+                       <button
+                        onClick={async () => {
+                          try {
+                            const currentStatus = editedUserData.isActive !== undefined ? editedUserData.isActive : true;
+                            const newStatus = !currentStatus;
+                            const userTypeMap = {
+                              'customer': 'customers',
+                              'seller': 'sellers',
+                              'rider': 'riders'
+                            };
+                            
+                            // Call API to toggle status
+                            const response = await toggleUserStatus(userTypeMap[currentUserType], editedUserData.id, newStatus);
+                            
+                            if (response.success) {
+                              // Update the edited data
+                              const updatedData = { ...editedUserData, isActive: newStatus };
+                              setEditedUserData(updatedData);
+                              setEditingItem(updatedData);
+                              
+                              // Refresh the data from server to ensure consistency
+                              let refreshData;
+                              if (currentUserType === 'rider') {
+                                refreshData = await getRiders();
+                                if (refreshData.success) {
+                                  setRiders(refreshData.riders);
+                                }
+                              } else if (currentUserType === 'seller') {
+                                refreshData = await getSellers();
+                                if (refreshData.success) {
+                                  setSellers(refreshData.sellers);
+                                }
+                              } else if (currentUserType === 'customer') {
+                                refreshData = await getCustomers();
+                                if (refreshData.success) {
+                                  setCustomers(refreshData.customers);
+                                }
+                              }
+                              
+                              const userTypeName = currentUserType.charAt(0).toUpperCase() + currentUserType.slice(1);
+                              showToast(`${userTypeName} ${newStatus ? 'activated' : 'deactivated'} successfully!`, 'success');
+                            }
+                          } catch (error) {
+                            console.error('Toggle status error:', error);
+                            showToast(`Failed to update ${currentUserType} status`, 'error');
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                          (editedUserData.isActive !== undefined ? editedUserData.isActive : true)
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                            : 'bg-red-100 text-red-800 hover:bg-red-200'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${
+                          (editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'bg-green-500' : 'bg-red-500'
+                        }`}></span>
+                        {(editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'Active' : 'Inactive'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                     <input
                       type="text"
-                      value={editingItem.name}
-                      readOnly
-                      className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                      value={editedUserData.name || editedUserData.fullName || ''}
+                      onChange={(e) => setEditedUserData({ ...editedUserData, name: e.target.value, fullName: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                      placeholder="Enter full name"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email (Read-only)</label>
                     <input
                       type="email"
-                      value={editingItem.email}
+                      value={editedUserData.email || ''}
                       readOnly
-                      className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                      className="w-full px-3 py-2 rounded-xl border bg-gray-50 cursor-not-allowed"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
                     <input
                       type="text"
-                      value={editingItem.phone}
-                      readOnly
-                      className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                      value={editedUserData.phone || ''}
+                      onChange={(e) => setEditedUserData({ ...editedUserData, phone: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                      placeholder="Enter phone number"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                    <input
-                      type="text"
-                      value={editingItem.address}
-                      readOnly
-                      className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                    <OpenStreetMapAutocomplete
+                      value={editedUserData.address || ''}
+                      onChange={(value) => setEditedUserData({ ...editedUserData, address: value })}
+                      onSelectAddress={(addressData) => {
+                        // Store the full address string and optionally the detailed data
+                        setEditedUserData({ 
+                          ...editedUserData, 
+                          address: addressData.street 
+                            ? `${addressData.street}, ${addressData.barangay ? addressData.barangay + ', ' : ''}${addressData.city}, ${addressData.province}`
+                            : editedUserData.address
+                        });
+                      }}
+                      label="Address"
+                      placeholder="Start typing address..."
+                      className="w-full"
                     />
                   </div>
 
-                  {editingItem.storeName && (
+                  {/* User ID - Read Only */}
+                  {editedUserData.id && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
+                      <input
+                        type="text"
+                        value={editedUserData.id}
+                        readOnly
+                        className="w-full px-3 py-2 rounded-xl border bg-gray-50 font-mono text-xs cursor-not-allowed"
+                      />
+                    </div>
+                  )}
+
+                  {/* Registration Date - Read Only */}
+                  {editedUserData.createdAt && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Registered On</label>
+                      <input
+                        type="text"
+                        value={new Date(editedUserData.createdAt).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                        readOnly
+                        className="w-full px-3 py-2 rounded-xl border bg-gray-50 cursor-not-allowed"
+                      />
+                    </div>
+                  )}
+
+                  {/* Seller-specific fields */}
+                  {currentUserType === 'seller' && (
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
                         <input
                           type="text"
-                          value={editingItem.storeName}
-                          readOnly
-                          className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                          value={editedUserData.storeName || ''}
+                          onChange={(e) => setEditedUserData({ ...editedUserData, storeName: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                          placeholder="Enter store name"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Business Type</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Business License</label>
                         <input
                           type="text"
-                          value={editingItem.businessLicense}
-                          readOnly
-                          className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                          value={editedUserData.businessLicense || ''}
+                          onChange={(e) => setEditedUserData({ ...editedUserData, businessLicense: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                          placeholder="Enter business license"
                         />
                       </div>
                     </>
                   )}
 
-                  {editingItem.vehicleType && (
+                  {/* Rider-specific fields */}
+                  {currentUserType === 'rider' && (
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                        <select
+                          value={editedUserData.vehicleType || ''}
+                          onChange={(e) => setEditedUserData({ ...editedUserData, vehicleType: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                        >
+                          <option value="">Select vehicle type</option>
+                          <option value="Motorcycle">Motorcycle</option>
+                          <option value="Bicycle">Bicycle</option>
+                          <option value="Car">Car</option>
+                          <option value="Van">Van</option>
+                          <option value="Truck">Truck</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Plate Number</label>
                         <input
                           type="text"
-                          value={editingItem.vehicleType}
-                          readOnly
-                          className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                          value={editedUserData.plateNumber || editedUserData.vehiclePlate || ''}
+                          onChange={(e) => setEditedUserData({ ...editedUserData, plateNumber: e.target.value, vehiclePlate: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                          placeholder="Enter plate number"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">License Number</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Driver's License Number</label>
                         <input
                           type="text"
-                          value={editingItem.licenseNumber}
-                          readOnly
-                          className="w-full px-3 py-2 rounded-xl border bg-gray-50"
+                          value={editedUserData.licenseNumber || ''}
+                          onChange={(e) => setEditedUserData({ ...editedUserData, licenseNumber: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                          placeholder="Enter license number"
                         />
                       </div>
                     </>
@@ -1419,10 +2412,87 @@ const AdminDashboard = () => {
 
                 <div className="mt-6 flex justify-end gap-3">
                   <button
-                    onClick={() => setIsUserModalOpen(false)}
-                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
+                    onClick={() => {
+                      setIsUserModalOpen(false);
+                      setEditingItem(null);
+                      setEditedUserData(null);
+                    }}
+                    disabled={isSavingUser}
+                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
                   >
-                    Close
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setIsSavingUser(true);
+                        
+                        // Prepare update data
+                        const updateData = {
+                          name: editedUserData.name || editedUserData.fullName,
+                          phone: editedUserData.phone,
+                          address: editedUserData.address,
+                        };
+
+                        // Add type-specific fields
+                        if (currentUserType === 'seller') {
+                          updateData.storeName = editedUserData.storeName;
+                          updateData.businessLicense = editedUserData.businessLicense;
+                        } else if (currentUserType === 'rider') {
+                          updateData.vehicleType = editedUserData.vehicleType;
+                          updateData.plateNumber = editedUserData.plateNumber || editedUserData.vehiclePlate;
+                          updateData.licenseNumber = editedUserData.licenseNumber;
+                        }
+
+                        // Call appropriate update function
+                        let response;
+                        if (currentUserType === 'customer') {
+                          response = await updateCustomer(editedUserData.id, updateData);
+                          if (response.success) {
+                            setCustomers(customers.map(c => 
+                              c.id === editedUserData.id ? { ...c, ...editedUserData } : c
+                            ));
+                          }
+                        } else if (currentUserType === 'seller') {
+                          response = await updateSeller(editedUserData.id, updateData);
+                          if (response.success) {
+                            setSellers(sellers.map(s => 
+                              s.id === editedUserData.id ? { ...s, ...editedUserData } : s
+                            ));
+                          }
+                        } else if (currentUserType === 'rider') {
+                          response = await updateRider(editedUserData.id, updateData);
+                          if (response.success) {
+                            setRiders(riders.map(r => 
+                              r.id === editedUserData.id ? { ...r, ...editedUserData } : r
+                            ));
+                          }
+                        }
+
+                        showToast(`${currentUserType.charAt(0).toUpperCase() + currentUserType.slice(1)} updated successfully!`, 'success');
+                        setIsUserModalOpen(false);
+                        setEditingItem(null);
+                        setEditedUserData(null);
+                      } catch (error) {
+                        console.error('Update user error:', error);
+                        showToast(error.message || 'Failed to update user', 'error');
+                      } finally {
+                        setIsSavingUser(false);
+                      }
+                    }}
+                    disabled={isSavingUser}
+                    className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg disabled:opacity-50 btn-shine"
+                  >
+                    {isSavingUser ? (
+                      <>
+                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        💾 Save Changes
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1600,6 +2670,24 @@ const AdminDashboard = () => {
                   required
                 />
 
+                {deliveryPersons.length === 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+                    <p className="text-yellow-800 font-medium mb-1">⚠️ No delivery persons available</p>
+                    <p className="text-yellow-700 text-xs">
+                      All delivery persons are either inactive or unavailable. Please activate riders in the Riders section.
+                    </p>
+                  </div>
+                )}
+
+                {deliveryPersons.length > 0 && deliveryPersons.length < 3 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                    <p className="text-blue-800 font-medium mb-1">ℹ️ Limited availability</p>
+                    <p className="text-blue-700 text-xs">
+                      Only {deliveryPersons.length} delivery {deliveryPersons.length === 1 ? 'person is' : 'persons are'} currently active and available. Check the Riders section to activate more.
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => {
@@ -1675,15 +2763,27 @@ const AdminDashboard = () => {
               {selectedOrderForTracking.deliveryPerson && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                   <p className="text-sm font-medium text-blue-900 mb-3">🚚 Delivery Person</p>
+                  <div className="flex items-start gap-4 mb-3">
+                    {/* Delivery Person Photo */}
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-blue-100 flex-shrink-0 border-2 border-blue-300">
+                      {selectedOrderForTracking.deliveryPerson.photo ? (
+                        <img
+                          src={selectedOrderForTracking.deliveryPerson.photo}
+                          alt={selectedOrderForTracking.deliveryPerson.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-blue-600 text-3xl font-semibold">
+                          🚚
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-blue-900 text-lg mb-1">{selectedOrderForTracking.deliveryPerson.name}</p>
+                      <p className="text-sm text-blue-700">📱 {selectedOrderForTracking.deliveryPerson.phone}</p>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-blue-700">Name:</p>
-                      <p className="font-semibold text-blue-900">{selectedOrderForTracking.deliveryPerson.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-blue-700">Phone:</p>
-                      <p className="font-semibold text-blue-900">{selectedOrderForTracking.deliveryPerson.phone}</p>
-                    </div>
                     <div>
                       <p className="text-blue-700">Vehicle:</p>
                       <p className="font-semibold text-blue-900">{selectedOrderForTracking.deliveryPerson.vehicleType}</p>
@@ -1792,42 +2892,27 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Notification Modal */}
-      {isNotificationModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          onClick={() => setIsNotificationModalOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold mb-4">Notifications</h3>
-            <div className="space-y-3 max-h-60 overflow-y-auto">
-              <div className="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
-                <p className="text-sm font-medium text-blue-800">New order received</p>
-                <p className="text-xs text-blue-600 mt-1">Order #ORD-2024-001 from Juan Dela Cruz</p>
-              </div>
-              <div className="p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-                <p className="text-sm font-medium text-yellow-800">Low stock alert</p>
-                <p className="text-xs text-yellow-600 mt-1">Ube Halaya has only 5 items left</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-lg border-l-4 border-green-500">
-                <p className="text-sm font-medium text-green-800">Order completed</p>
-                <p className="text-xs text-green-600 mt-1">Order #ORD-2024-002 has been delivered</p>
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setIsNotificationModalOpen(false)}
-                className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Notification Center */}
+      <NotificationCenter
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        onNavigate={(page) => {
+          handleNavigate(page);
+          setIsNotificationCenterOpen(false);
+        }}
+      />
+
+      {/* Bulk Actions Modal */}
+      <BulkActionsModal
+        isOpen={isBulkActionsModalOpen}
+        onClose={() => {
+          setIsBulkActionsModalOpen(false);
+          setSelectedItems([]);
+        }}
+        selectedItems={selectedItems}
+        itemType={bulkActionType}
+        onBulkAction={handleBulkAction}
+      />
     </div>
   );
 };

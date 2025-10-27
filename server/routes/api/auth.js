@@ -119,6 +119,15 @@ router.post('/buyer/login', async (req, res) => {
       });
     }
 
+    // Check if account is active
+    if (buyer.isActive === false) {
+      return res.status(403).json({ 
+        error: 'Account deactivated',
+        message: 'Your account has been deactivated. Please contact support for assistance.',
+        field: 'email'
+      });
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, buyer.password);
     if (!isPasswordValid) {
@@ -572,6 +581,15 @@ router.post('/seller/login', async (req, res) => {
       });
     }
 
+    // Check if account is active
+    if (seller.isActive === false) {
+      return res.status(403).json({ 
+        error: 'Account deactivated',
+        message: 'Your account has been deactivated. Please contact support for assistance.',
+        field: 'email'
+      });
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, seller.password);
     if (!isPasswordValid) {
@@ -1021,6 +1039,15 @@ router.post('/delivery/login', async (req, res) => {
       return res.status(401).json({ 
         error: 'Invalid credentials',
         message: 'No account found with this email',
+        field: 'email'
+      });
+    }
+
+    // Check if account is active
+    if (delivery.isActive === false) {
+      return res.status(403).json({ 
+        error: 'Account deactivated',
+        message: 'Your account has been deactivated. Please contact support for assistance.',
         field: 'email'
       });
     }

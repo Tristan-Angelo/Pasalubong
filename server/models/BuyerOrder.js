@@ -9,8 +9,7 @@ const buyerOrderSchema = new mongoose.Schema({
   buyerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Buyer',
-    required: true,
-    index: true
+    required: true
   },
   items: [{
     productId: {
@@ -119,6 +118,14 @@ const buyerOrderSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Indexes for efficient queries
+buyerOrderSchema.index({ buyerId: 1, createdAt: -1 });
+buyerOrderSchema.index({ deliveryPersonId: 1, deliveryStatus: 1 });
+buyerOrderSchema.index({ 'items.seller': 1, createdAt: -1 });
+buyerOrderSchema.index({ 'items.seller': 1, 'sellerStatus.seller': 1 });
+buyerOrderSchema.index({ status: 1 });
+buyerOrderSchema.index({ createdAt: -1 });
 
 // Generate order number before saving
 buyerOrderSchema.pre('save', async function(next) {

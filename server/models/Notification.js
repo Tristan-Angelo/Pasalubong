@@ -58,9 +58,12 @@ const notificationSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for efficient queries
+// Compound indexes for efficient queries
 notificationSchema.index({ recipientId: 1, recipientModel: 1, createdAt: -1 });
+notificationSchema.index({ recipientId: 1, recipientModel: 1, isRead: 1 });
 notificationSchema.index({ recipientId: 1, isRead: 1 });
+// Optimized index for unread count queries
+notificationSchema.index({ recipientId: 1, recipientModel: 1, isRead: 1 }, { name: 'unread_count_idx' });
 
 const Notification = mongoose.model('Notification', notificationSchema);
 

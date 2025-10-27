@@ -232,6 +232,34 @@ export const getRiders = async () => {
   });
 };
 
+export const updateCustomer = async (id, userData) => {
+  return apiCall(`/admin/customers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  });
+};
+
+export const updateSeller = async (id, userData) => {
+  return apiCall(`/admin/sellers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  });
+};
+
+export const updateRider = async (id, userData) => {
+  return apiCall(`/admin/riders/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  });
+};
+
+export const toggleUserStatus = async (userType, id, isActive) => {
+  return apiCall(`/admin/${userType}/${id}/toggle-status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+};
+
 export const deleteCustomer = async (id) => {
   return apiCall(`/admin/customers/${id}`, {
     method: 'DELETE',
@@ -381,8 +409,8 @@ export const updateOrderStatus = async (id, status) => {
 };
 
 // Buyer Orders (new system) - Admin functions
-export const getAdminBuyerOrders = async () => {
-  return adminApiCall('/admin/buyer-orders', { method: 'GET' });
+export const getAdminBuyerOrders = async (page = 1, limit = 20) => {
+  return adminApiCall(`/admin/buyer-orders?page=${page}&limit=${limit}`, { method: 'GET' });
 };
 
 export const getAdminDeliveryPersons = async () => {
@@ -526,8 +554,8 @@ export const setDefaultAddress = async (id) => {
 };
 
 // Orders
-export const getBuyerOrders = async () => {
-  return buyerApiCall('/buyer/orders', { method: 'GET' });
+export const getBuyerOrders = async (page = 1, limit = 20) => {
+  return buyerApiCall(`/buyer/orders?page=${page}&limit=${limit}`, { method: 'GET' });
 };
 
 export const getBuyerOrder = async (id) => {
@@ -716,8 +744,8 @@ export const deleteSellerProduct = async (productId) => {
 };
 
 // Orders
-export const getSellerOrders = async () => {
-  return sellerApiCall('/seller/orders', { method: 'GET' });
+export const getSellerOrders = async (page = 1, limit = 20) => {
+  return sellerApiCall(`/seller/orders?page=${page}&limit=${limit}`, { method: 'GET' });
 };
 
 export const updateSellerOrderStatus = async (orderId, status) => {
@@ -791,8 +819,8 @@ export const changeDeliveryPassword = async (passwordData) => {
 };
 
 // Deliveries
-export const getDeliveryAssignments = async () => {
-  return deliveryApiCall('/delivery/deliveries', { method: 'GET' });
+export const getDeliveryAssignments = async (page = 1, limit = 20) => {
+  return deliveryApiCall(`/delivery/deliveries?page=${page}&limit=${limit}`, { method: 'GET' });
 };
 
 export const acceptDelivery = async (orderId) => {

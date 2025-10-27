@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../../components/Navigation';
 import Footer from '../../components/Footer';
@@ -9,6 +9,9 @@ import ConfirmDeleteModal from '../../components/admin/ConfirmDeleteModal';
 import ProfileSettings from '../../components/ProfileSettings';
 import AccountSettings from '../../components/AccountSettings';
 import DeliveryPersonAutocomplete from '../../components/DeliveryPersonAutocomplete';
+import LoadingProgressBar from '../../components/LoadingProgressBar';
+import SkeletonLoader from '../../components/SkeletonLoader';
+import useLazyDashboardData from '../../hooks/useLazyDashboardData';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   getSellerProfile,
@@ -40,7 +43,6 @@ const SellerDashboard = () => {
     activeProducts: 0,
     pendingOrders: 0
   });
-  const [isLoading, setIsLoading] = useState(true);
   const [showProductModal, setShowProductModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -76,76 +78,19 @@ const SellerDashboard = () => {
   const [isAssigningDelivery, setIsAssigningDelivery] = useState(false);
   const [showOrderTrackingModal, setShowOrderTrackingModal] = useState(false);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [ordersPagination, setOrdersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalOrders: 0,
+    ordersPerPage: 10
+  });
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('');
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
 
-  // Load all data on mount
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  // Auto-refresh orders and statistics every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Only refresh if user is on dashboard or orders page
-      if (activePage === 'dashboard' || activePage === 'orders') {
-        loadOrders();
-        loadStatistics();
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [activePage]);
-
-  // Refresh data when active page changes (for notification navigation)
-  useEffect(() => {
-    const refreshPageData = async () => {
-      switch (activePage) {
-        case 'orders':
-          await Promise.all([loadOrders(), loadStatistics()]);
-          break;
-        case 'products':
-          await Promise.all([loadProducts(), loadStatistics()]);
-          break;
-        case 'analytics':
-          await Promise.all([loadOrders(), loadStatistics()]);
-          break;
-        case 'dashboard':
-          await Promise.all([loadOrders(), loadProducts(), loadStatistics()]);
-          break;
-        case 'profile':
-        case 'profile-settings':
-        case 'account-settings':
-          await loadProfile();
-          break;
-        default:
-          break;
-      }
-    };
-
-    // Only refresh if not on initial load
-    if (activePage !== 'dashboard' || document.hasFocus()) {
-      refreshPageData();
-    }
-  }, [activePage]);
-
-  const loadAllData = async () => {
-    setIsLoading(true);
-    try {
-      await Promise.all([
-        loadProfile(),
-        loadProducts(),
-        loadOrders(),
-        loadStatistics(),
-        loadDeliveryPersons()
-      ]);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      showToast(error.message || 'Failed to load data', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadProfile = async () => {
+  // Define data loaders for each section
+  const loadProfile = useCallback(async () => {
     try {
       const response = await getSellerProfile();
       if (response.success) {
@@ -165,10 +110,12 @@ const SellerDashboard = () => {
       }
     } catch (error) {
       console.error('Error loading profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
     }
-  };
+  }, []);
 
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     try {
       const response = await getSellerProducts();
       if (response.success) {
@@ -177,20 +124,24 @@ const SellerDashboard = () => {
     } catch (error) {
       console.error('Error loading products:', error);
     }
-  };
+  }, []);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async (page = null) => {
     try {
-      const response = await getSellerOrders();
+      const currentPage = page !== null ? page : ordersPagination.currentPage;
+      const response = await getSellerOrders(currentPage, ordersPagination.ordersPerPage);
       if (response.success) {
         setOrders(response.orders);
+        if (response.pagination) {
+          setOrdersPagination(response.pagination);
+        }
       }
     } catch (error) {
       console.error('Error loading orders:', error);
     }
-  };
+  }, [ordersPagination.currentPage, ordersPagination.ordersPerPage]);
 
-  const loadStatistics = async () => {
+  const loadStatistics = useCallback(async () => {
     try {
       const response = await getSellerStatistics();
       if (response.success) {
@@ -199,20 +150,70 @@ const SellerDashboard = () => {
     } catch (error) {
       console.error('Error loading statistics:', error);
     }
-  };
+  }, []);
 
-  const loadDeliveryPersons = async () => {
+  const loadDeliveryPersons = useCallback(async () => {
     try {
       const response = await getAvailableDeliveryPersons();
       if (response.success) {
-        // Filter only active delivery persons (isActive === true)
-        const activeDeliveryPersons = response.deliveryPersons.filter(dp => dp.isActive === true);
-        setDeliveryPersons(activeDeliveryPersons);
+        // API already filters for available (isAvailable === true) and active (isActive === true) delivery persons
+        setDeliveryPersons(response.deliveryPersons);
       }
     } catch (error) {
       console.error('Error loading delivery persons:', error);
     }
-  };
+  }, []);
+
+  // Define data loaders for each section
+  const dataLoaders = useMemo(() => ({
+    dashboard: [loadStatistics, loadOrders],
+    orders: [loadOrders, loadStatistics],
+    products: [loadProducts, loadStatistics],
+    analytics: [loadOrders, loadStatistics],
+    'profile-settings': [loadProfile],
+    'account-settings': [loadProfile],
+    profile: [loadProfile]
+  }), [loadStatistics, loadOrders, loadProducts, loadProfile]);
+
+  // Use lazy loading hook
+  const { isLoading, isSectionLoaded, canRenderSection, canNavigate, reloadSection, initialLoadComplete, loadingRef } = useLazyDashboardData(
+    activePage,
+    dataLoaders
+  );
+
+  // Navigation handler - prevent navigation while loading
+  const handleNavigate = useCallback((page) => {
+    // Use ref for immediate check to prevent race conditions
+    if (loadingRef.current || isLoading) {
+      console.log('⏸️ Navigation blocked - loading in progress');
+      return;
+    }
+    console.log(`✅ Navigating to: ${page}`);
+    setActivePage(page);
+  }, [isLoading, loadingRef]);
+
+  // Load profile on mount
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  // Load delivery persons once on mount (lightweight)
+  useEffect(() => {
+    loadDeliveryPersons();
+  }, [loadDeliveryPersons]);
+
+  // Auto-refresh orders and statistics every 30 seconds (only if section is loaded)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only refresh if user is on dashboard or orders page and data is already loaded
+      if ((activePage === 'dashboard' || activePage === 'orders') && isSectionLoaded(activePage)) {
+        loadOrders();
+        loadStatistics();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [activePage, isSectionLoaded, loadOrders, loadStatistics]);
 
   const handleAssignDelivery = async () => {
     if (!selectedDeliveryPersonId) {
@@ -568,7 +569,7 @@ const SellerDashboard = () => {
               🔄 Refresh
             </button>
             <button
-              onClick={() => setActivePage('orders')}
+              onClick={() => handleNavigate('orders')}
               className="text-rose-600 hover:underline text-sm"
             >
               View All
@@ -735,22 +736,81 @@ const SellerDashboard = () => {
     </section>
   );
 
-  const renderOrdersPage = () => (
-    <section className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">Order Management</h3>
-        <button
-          onClick={async () => {
-            await Promise.all([loadOrders(), loadStatistics()]);
-            showToast('Orders refreshed!', 'success');
-          }}
-          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
-        >
-          🔄 Refresh Orders
-        </button>
-      </div>
-      <div className="space-y-4">
-        {orders.map(order => (
+  const renderOrdersPage = () => {
+    // Filter orders based on search term and status
+    const filteredOrders = orders.filter(order => {
+      const matchesSearch = !orderSearchTerm || 
+        order.id?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+        order.orderNumber?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+        order.customerName?.toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+        order.items?.some(item => item.name?.toLowerCase().includes(orderSearchTerm.toLowerCase()));
+      
+      const matchesStatus = !orderStatusFilter || order.status === orderStatusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+
+    return (
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 className="text-lg font-semibold">Order Management ({ordersPagination.totalOrders})</h3>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              placeholder="Search orders..."
+              value={orderSearchTerm}
+              onChange={(e) => setOrderSearchTerm(e.target.value)}
+              className="px-3 py-2 rounded-xl border outline-none"
+            />
+            <select
+              value={orderStatusFilter}
+              onChange={(e) => setOrderStatusFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl border"
+            >
+              <option value="">All Status</option>
+              <option value="Pending">Pending</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Preparing">Preparing</option>
+              <option value="Ready">Ready</option>
+              <option value="Out for Delivery">Out for Delivery</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+            <button
+              onClick={async () => {
+                await Promise.all([loadOrders(), loadStatistics()]);
+                showToast('Orders refreshed!', 'success');
+              }}
+              className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
+            >
+              🔄 Refresh Orders
+            </button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {filteredOrders.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📦</div>
+              <h3 className="text-xl font-semibold mb-2">No Orders Found</h3>
+              <p className="text-gray-600 mb-4">
+                {orderSearchTerm || orderStatusFilter 
+                  ? 'No orders match your search criteria. Try adjusting your filters.'
+                  : 'No orders available.'}
+              </p>
+              {(orderSearchTerm || orderStatusFilter) && (
+                <button
+                  onClick={() => {
+                    setOrderSearchTerm('');
+                    setOrderStatusFilter('');
+                  }}
+                  className="text-blue-600 hover:underline text-sm"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredOrders.map(order => (
           <div
             key={order.id}
             className={`card p-4 hover-animate cursor-pointer hover:shadow-lg transition-shadow ${getStatusBackgroundColor(getDisplayStatus(order))}`}
@@ -773,7 +833,7 @@ const SellerDashboard = () => {
                     <p className="text-sm font-medium text-blue-900 mb-2">🚚 Delivery Person Assigned</p>
                     <div className="flex items-start gap-3">
                       {/* Delivery Person Photo */}
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-white flex-shrink-0 border-2 border-blue-300">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-blue-100 flex-shrink-0 border-2 border-blue-300">
                         {order.deliveryPerson.photo ? (
                           <img
                             src={order.deliveryPerson.photo}
@@ -781,7 +841,7 @@ const SellerDashboard = () => {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-blue-600 text-lg">
+                          <div className="w-full h-full flex items-center justify-center text-blue-600 text-2xl font-semibold">
                             🚚
                           </div>
                         )}
@@ -858,9 +918,11 @@ const SellerDashboard = () => {
               {/* Show Assign Delivery button if order is Ready and no delivery person assigned */}
               {order.status === 'Ready' && !order.deliveryPerson && (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setSelectedOrderForDelivery(order);
                     setShowAssignDeliveryModal(true);
+                    // Refresh delivery persons list to get latest availability
+                    await loadDeliveryPersons();
                   }}
                   className="bg-purple-500 hover:bg-purple-600 text-white py-1 px-3 rounded text-sm flex items-center gap-1"
                 >
@@ -870,9 +932,11 @@ const SellerDashboard = () => {
               {/* Show Re-assign button if delivery was declined (deliveryStatus is Assigned but no deliveryPerson) */}
               {order.deliveryStatus === 'Assigned' && !order.deliveryPerson && order.status !== 'Ready' && (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setSelectedOrderForDelivery(order);
                     setShowAssignDeliveryModal(true);
+                    // Refresh delivery persons list to get latest availability
+                    await loadDeliveryPersons();
                   }}
                   className="bg-orange-500 hover:bg-orange-600 text-white py-1 px-3 rounded text-sm flex items-center gap-1"
                 >
@@ -880,11 +944,58 @@ const SellerDashboard = () => {
                 </button>
               )}
             </div>
+            </div>
+          ))
+          )}
+        </div>
+
+        {/* Pagination Controls */}
+        {ordersPagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 p-4 bg-white rounded-lg border">
+            <div className="text-sm text-gray-600">
+              Showing page {ordersPagination.currentPage} of {ordersPagination.totalPages}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  const newPage = ordersPagination.currentPage - 1;
+                  setIsPaginationLoading(true);
+                  setOrdersPagination(prev => ({ ...prev, currentPage: newPage }));
+                  await loadOrders(newPage);
+                  setIsPaginationLoading(false);
+                }}
+                disabled={ordersPagination.currentPage === 1 || isPaginationLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  ordersPagination.currentPage === 1 || isPaginationLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                }`}
+              >
+                ← Previous
+              </button>
+              <button
+                onClick={async () => {
+                  const newPage = ordersPagination.currentPage + 1;
+                  setIsPaginationLoading(true);
+                  setOrdersPagination(prev => ({ ...prev, currentPage: newPage }));
+                  await loadOrders(newPage);
+                  setIsPaginationLoading(false);
+                }}
+                disabled={ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                }`}
+              >
+                Next →
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
-    </section>
-  );
+        )}
+      </section>
+    );
+  };
 
   // Calculate sales data for the last 7 days
   const salesChartData = useMemo(() => {
@@ -1059,7 +1170,7 @@ const SellerDashboard = () => {
       <div className="card p-6 hover-animate reveal">
         <h2 className="text-lg font-semibold mb-4">Business Profile</h2>
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-20 h-20 rounded-full border-2 border-rose-500 overflow-hidden bg-gray-100 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full border-2 border-rose-500 overflow-hidden bg-rose-50 flex items-center justify-center">
             {profilePhotoPreview ? (
               <img
                 src={profilePhotoPreview}
@@ -1067,7 +1178,7 @@ const SellerDashboard = () => {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <span className="text-4xl text-gray-400">🏪</span>
+              <span className="text-4xl text-rose-600 font-semibold">🏪</span>
             )}
           </div>
           <div className="flex-1">
@@ -1163,6 +1274,99 @@ const SellerDashboard = () => {
   );
 
   const renderCurrentPage = () => {
+    // Don't render section content until data is loaded
+    if (!canRenderSection(activePage)) {
+      return (
+        <div className="space-y-6">
+          {activePage === 'dashboard' && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="stat-card" count={4} />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SkeletonLoader variant="chart" count={2} />
+              </div>
+            </>
+          )}
+          {activePage === 'products' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="text-left text-sm border-b">
+                      <tr>
+                        <th className="p-3">Product</th>
+                        <th className="p-3 w-[140px]">Category</th>
+                        <th className="p-3 w-[100px]">Price</th>
+                        <th className="p-3 w-[90px]">Stock</th>
+                        <th className="p-3 w-[100px]">Status</th>
+                        <th className="p-3 w-[120px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {Array.from({ length: 8 }).map((_, index) => (
+                        <tr key={index} className="border-b animate-pulse">
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+                              <div className="flex-1 space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="h-4 bg-gray-200 rounded w-20"></div>
+                          </td>
+                          <td className="p-3">
+                            <div className="h-4 bg-gray-200 rounded w-16"></div>
+                          </td>
+                          <td className="p-3">
+                            <div className="h-6 bg-gray-200 rounded w-12"></div>
+                          </td>
+                          <td className="p-3">
+                            <div className="h-6 bg-gray-200 rounded w-16"></div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex gap-1">
+                              <div className="w-8 h-8 bg-gray-200 rounded"></div>
+                              <div className="w-8 h-8 bg-gray-200 rounded"></div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+          {activePage === 'orders' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-4">
+                <SkeletonLoader variant="order-card" count={6} />
+              </div>
+            </>
+          )}
+          {activePage === 'analytics' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SkeletonLoader variant="chart" count={2} />
+              </div>
+            </>
+          )}
+          {activePage === 'profile' && (
+            <SkeletonLoader variant="profile" count={1} />
+          )}
+          {(activePage === 'profile-settings' || activePage === 'account-settings') && (
+            <SkeletonLoader variant="profile" count={1} />
+          )}
+        </div>
+      );
+    }
+
     switch (activePage) {
       case 'dashboard':
         return renderDashboardPage();
@@ -1180,7 +1384,7 @@ const SellerDashboard = () => {
             userType="seller"
             userData={profile}
             onUpdate={handleProfileUpdate}
-            onCancel={() => setActivePage('dashboard')}
+            onCancel={() => handleNavigate('dashboard')}
           />
         );
       case 'account-settings':
@@ -1191,7 +1395,7 @@ const SellerDashboard = () => {
             onUpdateEmail={handleEmailUpdate}
             onUpdatePhone={handlePhoneUpdate}
             onUpdatePassword={handlePasswordUpdate}
-            onCancel={() => setActivePage('dashboard')}
+            onCancel={() => handleNavigate('dashboard')}
           />
         );
       default:
@@ -1226,12 +1430,34 @@ const SellerDashboard = () => {
     navigate('/seller/login');
   };
 
-  if (isLoading) {
+
+  // Show loading state only while initial profile is being fetched
+  if (isLoadingProfile) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+        <div className="h-20 bg-white border-b border-gray-200 animate-pulse">
+          <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
+            <div className="h-8 bg-gray-200 rounded w-32"></div>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+        <div className="flex h-[calc(100vh-80px)]">
+          <div className="w-64 bg-white border-r border-gray-200 p-4 space-y-2">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="stat-card" count={4} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1243,7 +1469,7 @@ const SellerDashboard = () => {
       <DashboardNavbar
         userType="seller"
         onLogout={handleLogout}
-        onNavigate={setActivePage}
+        onNavigate={handleNavigate}
         userData={profile}
         onToggleSidebar={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
       />
@@ -1253,11 +1479,12 @@ const SellerDashboard = () => {
         {/* Sidebar */}
         <DashboardSidebar
           activePage={activePage}
-          setActivePage={setActivePage}
+          setActivePage={handleNavigate}
           userType="seller"
           userData={profile}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
+          isLoading={isLoading}
         />
 
         {/* Main content */}
@@ -1336,6 +1563,24 @@ const SellerDashboard = () => {
                   required
                 />
 
+                {deliveryPersons.length === 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+                    <p className="text-yellow-800 font-medium mb-1">⚠️ No delivery persons available</p>
+                    <p className="text-yellow-700 text-xs">
+                      All delivery persons are either inactive or unavailable. Please contact admin to activate delivery persons.
+                    </p>
+                  </div>
+                )}
+
+                {deliveryPersons.length > 0 && deliveryPersons.length < 3 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                    <p className="text-blue-800 font-medium mb-1">ℹ️ Limited availability</p>
+                    <p className="text-blue-700 text-xs">
+                      Only {deliveryPersons.length} delivery {deliveryPersons.length === 1 ? 'person is' : 'persons are'} currently active and available. Some riders may be inactive or unavailable.
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => {
@@ -1413,7 +1658,7 @@ const SellerDashboard = () => {
                   <p className="text-sm font-medium text-blue-900 mb-3">🚚 Delivery Person</p>
                   <div className="flex items-start gap-4 mb-3">
                     {/* Delivery Person Photo */}
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-white flex-shrink-0 border-2 border-blue-300">
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-blue-100 flex-shrink-0 border-2 border-blue-300">
                       {selectedOrderForTracking.deliveryPerson.photo ? (
                         <img
                           src={selectedOrderForTracking.deliveryPerson.photo}
@@ -1421,7 +1666,7 @@ const SellerDashboard = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-blue-600 text-2xl">
+                        <div className="w-full h-full flex items-center justify-center text-blue-600 text-3xl font-semibold">
                           🚚
                         </div>
                       )}
@@ -1538,6 +1783,8 @@ const SellerDashboard = () => {
         </div>
       )}
 
+      {/* Loading Progress Bar */}
+      <LoadingProgressBar isLoading={isLoading || isPaginationLoading} />
     </div>
   );
 };

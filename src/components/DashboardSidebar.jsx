@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const DashboardSidebar = ({ activePage, setActivePage, userType = 'buyer', cartCount = 0, userData = null, isMobileMenuOpen = false, setIsMobileMenuOpen }) => {
+const DashboardSidebar = ({ activePage, setActivePage, userType = 'buyer', cartCount = 0, userData = null, isMobileMenuOpen = false, setIsMobileMenuOpen, isLoading = false }) => {
   const toggleMobileMenu = () => {
     if (setIsMobileMenuOpen) {
       setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -8,6 +8,13 @@ const DashboardSidebar = ({ activePage, setActivePage, userType = 'buyer', cartC
   };
 
   const handleMenuItemClick = (pageId) => {
+    // Don't allow navigation if loading or if already on that page
+    if (isLoading || pageId === activePage) {
+      if (isLoading) {
+        console.log('⏸️ Menu click blocked - loading in progress');
+      }
+      return;
+    }
     setActivePage(pageId);
     setIsMobileMenuOpen(false); // Close mobile menu after selection
   };
@@ -140,9 +147,12 @@ const DashboardSidebar = ({ activePage, setActivePage, userType = 'buyer', cartC
             <li key={item.id}>
               <button
                 onClick={() => handleMenuItemClick(item.id)}
+                disabled={isLoading && item.id !== activePage}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
                   activePage === item.id
                     ? 'bg-rose-100 text-rose-700 border-l-4 border-rose-500'
+                    : isLoading
+                    ? 'text-gray-400 cursor-not-allowed opacity-50'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
                 }`}
               >

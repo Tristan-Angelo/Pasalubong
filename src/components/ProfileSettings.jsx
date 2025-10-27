@@ -8,7 +8,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [selectedAddressData, setSelectedAddressData] = useState(null);
   const [fullAddress, setFullAddress] = useState('');
-  const [isActive, setIsActive] = useState(true);
+  const [isAvailable, setIsAvailable] = useState(true);
 
   useEffect(() => {
     if (userData) {
@@ -67,7 +67,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
             photo: userData.photo || null
           });
           setPhotoPreview(userData.photo || null);
-          setIsActive(userData.isActive !== undefined ? userData.isActive : true);
+          setIsAvailable(userData.isAvailable !== undefined ? userData.isAvailable : true);
           break;
         case 'admin':
           setFormData({
@@ -139,9 +139,9 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
 
     try {
       const dataToUpdate = { ...formData };
-      // Include isActive status for delivery users
+      // Include isAvailable status for delivery users
       if (userType === 'delivery') {
-        dataToUpdate.isActive = isActive;
+        dataToUpdate.isAvailable = isAvailable;
       }
       await onUpdate(dataToUpdate);
       // Don't set message here - parent component handles toast notification
@@ -152,18 +152,18 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
     }
   };
 
-  // Auto-save isActive status when toggled (for delivery users only)
+  // Auto-save isAvailable status when toggled (for delivery users only)
   const handleActiveToggle = async () => {
-    const newActiveStatus = !isActive;
-    setIsActive(newActiveStatus);
+    const newAvailableStatus = !isAvailable;
+    setIsAvailable(newAvailableStatus);
     
     if (userType === 'delivery') {
       try {
-        await onUpdate({ isActive: newActiveStatus });
+        await onUpdate({ isAvailable: newAvailableStatus });
         // Parent component will show toast notification
       } catch (error) {
         // Revert on error
-        setIsActive(!newActiveStatus);
+        setIsAvailable(!newAvailableStatus);
         setMessage({ type: 'error', text: error.message || 'Failed to update status' });
       }
     }
@@ -547,19 +547,19 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
           {/* Active/Inactive Toggle - Only for delivery users */}
           {userType === 'delivery' && (
             <div className="flex items-center gap-3">
-              <span className={`text-sm font-medium ${isActive ? 'text-green-600' : 'text-gray-500'}`}>
-                {isActive ? 'Active' : 'Inactive'}
+              <span className={`text-sm font-medium ${isAvailable ? 'text-green-600' : 'text-gray-500'}`}>
+                {isAvailable ? 'Available' : 'Unavailable'}
               </span>
               <button
                 type="button"
                 onClick={handleActiveToggle}
                 className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 ${
-                  isActive ? 'bg-green-500' : 'bg-gray-300'
+                  isAvailable ? 'bg-green-500' : 'bg-gray-300'
                 }`}
               >
                 <span
                   className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                    isActive ? 'translate-x-8' : 'translate-x-1'
+                    isAvailable ? 'translate-x-8' : 'translate-x-1'
                   }`}
                 />
               </button>
@@ -579,7 +579,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo</label>
           <div className="flex items-center gap-4">
-            <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center border-2 border-gray-200">
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-rose-50 flex items-center justify-center border-2 border-rose-500">
               {photoPreview ? (
                 <img
                   src={photoPreview}
@@ -587,7 +587,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <span className="text-4xl text-gray-400">
+                <span className="text-5xl text-rose-600 font-semibold">
                   {userType === 'buyer' && '👤'}
                   {userType === 'seller' && '🏪'}
                   {userType === 'delivery' && '🚚'}
@@ -622,17 +622,17 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
             {renderDeliveryFields()}
             
             {/* Status Information for Delivery */}
-            <div className={`mt-4 p-4 rounded-lg border-2 ${isActive ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+            <div className={`mt-4 p-4 rounded-lg border-2 ${isAvailable ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
               <div className="flex items-start gap-3">
                 <div className="text-2xl">
-                  {isActive ? '✅' : '⏸️'}
+                  {isAvailable ? '✅' : '⏸️'}
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-sm mb-1">
-                    {isActive ? 'You are currently active' : 'You are currently inactive'}
+                    {isAvailable ? 'You are currently available' : 'You are currently unavailable'}
                   </h3>
                   <p className="text-xs text-gray-600">
-                    {isActive 
+                    {isAvailable 
                       ? 'You will receive new delivery assignments. Toggle off when you want to stop receiving new orders.'
                       : 'You will not receive new delivery assignments. Toggle on when you are ready to accept deliveries.'}
                   </p>

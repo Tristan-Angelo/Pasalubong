@@ -23,13 +23,17 @@ router.use(authenticateBuyer);
 // Get buyer profile
 router.get('/profile', async (req, res) => {
   try {
-    const buyer = await Buyer.findById(req.buyerId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode');
-    const profile = await BuyerProfile.findOne({ buyerId: req.buyerId });
+    const buyer = await Buyer.findById(req.buyerId)
+      .select('-password -verificationToken -resetPasswordToken -resetPasswordCode')
+      .lean();
+    const profile = await BuyerProfile.findOne({ buyerId: req.buyerId })
+      .select('photo birthday')
+      .lean();
 
     res.json({
       success: true,
       profile: {
-        ...buyer.toObject(),
+        ...buyer,
         photo: profile?.photo || null,
         birthday: profile?.birthday || null
       }
@@ -218,7 +222,9 @@ router.get('/products', async (req, res) => {
       query.category = category;
     }
 
-    let productsQuery = Product.find(query);
+    let productsQuery = Product.find(query)
+      .select('_id name price category image images stock seller rating reviewCount createdAt')
+      .lean();
 
     // Sorting
     switch (sortBy) {
@@ -235,7 +241,7 @@ router.get('/products', async (req, res) => {
         productsQuery = productsQuery.sort({ createdAt: -1 });
     }
 
-    const products = await productsQuery;
+    const products = await productsQuery.limit(500);
 
     // Transform products with actual ratings and reviews
     const transformedProducts = products.map(product => ({
@@ -269,7 +275,7 @@ router.get('/products', async (req, res) => {
 // Get single product
 router.get('/products/:id', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id).lean();
 
     if (!product) {
       return res.status(404).json({
@@ -309,7 +315,13 @@ router.get('/products/:id', async (req, res) => {
 // Get cart
 router.get('/cart', async (req, res) => {
   try {
-    let cart = await BuyerCart.findOne({ buyerId: req.buyerId }).populate('items.productId');
+    let cart = await BuyerCart.findOne({ buyerId: req.buyerId })
+      .select('buyerId items')
+      .populate({
+        path: 'items.productId',
+        select: 'name price image stock seller'
+      })
+      .lean();
 
     if (!cart) {
       cart = await BuyerCart.create({ buyerId: req.buyerId, items: [] });
@@ -324,12 +336,8 @@ router.get('/cart', async (req, res) => {
 
     // Fetch seller information
     const sellers = await Seller.find({ email: { $in: sellerEmails } })
-      .select('email businessName palawanPayNumber palawanPayName');
-    
-    console.log('🔍 Found sellers:', sellers.length);
-    sellers.forEach(seller => {
-      console.log(`  - ${seller.email}: Palawan Pay=${seller.palawanPayNumber || 'NOT SET'}, Name=${seller.palawanPayName || 'NOT SET'}`);
-    });
+      .select('email businessName palawanPayNumber palawanPayName')
+      .lean();
     
     const sellerMap = {};
     sellers.forEach(seller => {
@@ -587,7 +595,14 @@ router.delete('/cart', async (req, res) => {
 // Get favorites
 router.get('/favorites', async (req, res) => {
   try {
-    const favorites = await BuyerFavorite.find({ buyerId: req.buyerId }).populate('productId');
+    const favorites = await BuyerFavorite.find({ buyerId: req.buyerId })
+      .select('buyerId productId')
+      .populate({
+        path: 'productId',
+        select: 'name price category image images stock seller rating reviewCount'
+      })
+      .limit(200)
+      .lean();
 
     const productIds = favorites
       .filter(fav => fav.productId)
@@ -678,7 +693,11 @@ router.delete('/favorites/:productId', async (req, res) => {
 // Get all addresses
 router.get('/addresses', async (req, res) => {
   try {
-    const addresses = await BuyerAddress.find({ buyerId: req.buyerId }).sort({ isDefault: -1, createdAt: -1 });
+    const addresses = await BuyerAddress.find({ buyerId: req.buyerId })
+      .select('label address city postal phone isDefault createdAt')
+      .sort({ isDefault: -1, createdAt: -1 })
+      .limit(50)
+      .lean();
 
     const transformedAddresses = addresses.map(addr => ({
       id: addr._id.toString(),
@@ -872,9 +891,17 @@ router.put('/addresses/:id/default', async (req, res) => {
 // Get all orders
 router.get('/orders', async (req, res) => {
   try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const totalOrders = await BuyerOrder.countDocuments({ buyerId: req.buyerId });
     const orders = await BuyerOrder.find({ buyerId: req.buyerId })
+      .select('orderNumber items total status deliveryAddress sellerStatus deliveryPersonId deliveryStatus proofOfDelivery proofOfDeliveryImages deliveredAt statusHistory itemReviews canReview createdAt')
       .populate('deliveryPersonId', 'fullname phone vehicleType vehiclePlate licenseNumber photo')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
 
     const transformedOrders = orders.map(order => ({
       _id: order._id,
@@ -912,7 +939,13 @@ router.get('/orders', async (req, res) => {
 
     res.json({
       success: true,
-      orders: transformedOrders
+      orders: transformedOrders,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalOrders / parseInt(limit)),
+        totalOrders,
+        ordersPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get orders error:', error);

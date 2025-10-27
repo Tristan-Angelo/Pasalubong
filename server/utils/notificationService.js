@@ -1,4 +1,5 @@
 import Notification from '../models/Notification.js';
+import cache from './cache.js';
 
 /**
  * Create a notification for a user
@@ -50,15 +51,28 @@ export const getUserNotifications = async (userId, userModel, limit = 20, skip =
 };
 
 /**
- * Get unread notification count
+ * Get unread notification count (with caching)
  */
 export const getUnreadCount = async (userId, userModel) => {
   try {
+    // Check cache first
+    const cacheKey = `unread_count:${userId}:${userModel}`;
+    const cachedCount = cache.get(cacheKey);
+    
+    if (cachedCount !== null) {
+      return cachedCount;
+    }
+
+    // Query database if not in cache
     const count = await Notification.countDocuments({
       recipientId: userId,
       recipientModel: userModel,
       isRead: false
     });
+    
+    // Cache for 10 seconds
+    cache.set(cacheKey, count, 10);
+    
     return count;
   } catch (error) {
     console.error('Error counting unread notifications:', error);
@@ -76,6 +90,12 @@ export const markAsRead = async (notificationId, userId) => {
       { isRead: true },
       { new: true }
     );
+    
+    // Invalidate cache for all user models
+    ['Admin', 'Seller', 'Delivery', 'Buyer'].forEach(model => {
+      cache.delete(`unread_count:${userId}:${model}`);
+    });
+    
     return notification;
   } catch (error) {
     console.error('Error marking notification as read:', error);
@@ -92,6 +112,10 @@ export const markAllAsRead = async (userId, userModel) => {
       { recipientId: userId, recipientModel: userModel, isRead: false },
       { isRead: true }
     );
+    
+    // Invalidate cache
+    cache.delete(`unread_count:${userId}:${userModel}`);
+    
     return true;
   } catch (error) {
     console.error('Error marking all notifications as read:', error);
@@ -120,6 +144,9 @@ export const deleteNotification = async (notificationId, userId) => {
  */
 
 export const notifyNewOrder = async (sellerId, orderData) => {
+  // Invalidate cache when creating new notification
+  cache.delete(`unread_count:${sellerId}:Seller`);
+  
   return createNotification({
     recipientId: sellerId,
     recipientModel: 'Seller',

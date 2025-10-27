@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const DeliveryPersonAutocomplete = ({ 
+const DeliveryPersonAutocomplete = ({
   deliveryPersons = [],
-  value, 
-  onChange, 
-  placeholder = 'Search delivery person...', 
+  value,
+  onChange,
+  placeholder = 'Search delivery person...',
   label = 'Select Delivery Person',
   required = false,
   disabled = false,
@@ -48,7 +48,7 @@ const DeliveryPersonAutocomplete = ({
     if (!query || query.length < 1) return deliveryPersons;
 
     const lowerQuery = query.toLowerCase();
-    return deliveryPersons.filter(person => 
+    return deliveryPersons.filter(person =>
       person.name.toLowerCase().includes(lowerQuery) ||
       person.phone.toLowerCase().includes(lowerQuery) ||
       person.vehicleType.toLowerCase().includes(lowerQuery) ||
@@ -61,7 +61,7 @@ const DeliveryPersonAutocomplete = ({
     const newValue = e.target.value;
     setInputValue(newValue);
     setSelectedPerson(null);
-    
+
     const results = getSuggestionsList(newValue);
     setSuggestions(results);
     setShowSuggestions(true);
@@ -79,7 +79,7 @@ const DeliveryPersonAutocomplete = ({
     setShowSuggestions(false);
     setSuggestions([]);
     setSelectedIndex(-1);
-    
+
     if (onChange) {
       onChange(person.id);
     }
@@ -91,7 +91,7 @@ const DeliveryPersonAutocomplete = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex(prev => 
+        setSelectedIndex(prev =>
           prev < suggestions.length - 1 ? prev + 1 : prev
         );
         break;
@@ -144,7 +144,7 @@ const DeliveryPersonAutocomplete = ({
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
-      
+
       <div className="relative">
         <input
           ref={inputRef}
@@ -159,7 +159,7 @@ const DeliveryPersonAutocomplete = ({
           className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
           autoComplete="off"
         />
-        
+
         {/* Clear button */}
         {inputValue && !disabled && (
           <button
@@ -170,7 +170,7 @@ const DeliveryPersonAutocomplete = ({
             ✕
           </button>
         )}
-        
+
         {/* Suggestions dropdown */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -179,9 +179,8 @@ const DeliveryPersonAutocomplete = ({
                 key={person.id}
                 type="button"
                 onClick={() => handleSuggestionClick(person)}
-                className={`w-full text-left px-4 py-3 hover:bg-rose-50 transition-colors ${
-                  index === selectedIndex ? 'bg-rose-100' : ''
-                } ${index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''}`}
+                className={`w-full text-left px-4 py-3 hover:bg-rose-50 transition-colors ${index === selectedIndex ? 'bg-rose-100' : ''
+                  } ${index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''}`}
               >
                 <div className="flex items-center gap-3">
                   {/* Delivery Person Photo */}
@@ -198,13 +197,13 @@ const DeliveryPersonAutocomplete = ({
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
                       {person.name}
                       {person.isActive && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Active
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Available
                         </span>
                       )}
                     </div>
@@ -220,14 +219,14 @@ const DeliveryPersonAutocomplete = ({
             ))}
           </div>
         )}
-        
+
         {/* No results message */}
         {showSuggestions && suggestions.length === 0 && inputValue.length >= 1 && (
           <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3">
             <p className="text-sm text-gray-500 text-center">No delivery persons found</p>
           </div>
         )}
-        
+
         {/* Empty state when no delivery persons available */}
         {showSuggestions && deliveryPersons.length === 0 && (
           <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3">
@@ -235,7 +234,7 @@ const DeliveryPersonAutocomplete = ({
           </div>
         )}
       </div>
-      
+
       {/* Selected person display */}
       {selectedPerson && (
         <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -254,7 +253,7 @@ const DeliveryPersonAutocomplete = ({
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1">
               <p className="text-sm font-medium text-green-900">✓ Selected: {selectedPerson.name}</p>
               <p className="text-xs text-green-700 mt-1">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../../components/Navigation';
 import Footer from '../../components/Footer';
@@ -7,6 +7,9 @@ import DashboardNavbar from '../../components/DashboardNavbar';
 import ProfileSettings from '../../components/ProfileSettings';
 import AccountSettings from '../../components/AccountSettings';
 import RouteMap from '../../components/RouteMap';
+import LoadingProgressBar from '../../components/LoadingProgressBar';
+import SkeletonLoader from '../../components/SkeletonLoader';
+import useLazyDashboardData from '../../hooks/useLazyDashboardData';
 import {
   getDeliveryProfile,
   updateDeliveryProfile,
@@ -35,7 +38,6 @@ const DeliveryDashboard = () => {
     totalEarnings: 0,
     todayEarnings: 0
   });
-  const [isLoading, setIsLoading] = useState(true);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
@@ -47,73 +49,19 @@ const DeliveryDashboard = () => {
   const [proofOfDeliveryImagePreviews, setProofOfDeliveryImagePreviews] = useState({});
   const [showProofUploadModal, setShowProofUploadModal] = useState(false);
   const [selectedDeliveryForProof, setSelectedDeliveryForProof] = useState(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [deliveriesPagination, setDeliveriesPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalDeliveries: 0,
+    deliveriesPerPage: 10
+  });
+  const [deliverySearchTerm, setDeliverySearchTerm] = useState('');
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState('');
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
 
-  // Load all data on mount
-  useEffect(() => {
-    loadAllData();
-    
-    // Get current location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.log('Error getting location:', error);
-        }
-      );
-    }
-  }, []);
-
-  // Refresh data when active page changes
-  useEffect(() => {
-    const refreshPageData = async () => {
-      switch (activePage) {
-        case 'deliveries':
-          await Promise.all([loadDeliveries(), loadStatistics()]);
-          break;
-        case 'earnings':
-          await loadEarnings();
-          break;
-        case 'dashboard':
-          await Promise.all([loadDeliveries(), loadStatistics(), loadEarnings()]);
-          break;
-        case 'profile-settings':
-        case 'account-settings':
-          await loadProfile();
-          break;
-        default:
-          break;
-      }
-    };
-
-    // Only refresh if not on initial load
-    if (activePage !== 'dashboard' || document.hasFocus()) {
-      refreshPageData();
-    }
-  }, [activePage]);
-
-  const loadAllData = async () => {
-    setIsLoading(true);
-    try {
-      await Promise.all([
-        loadProfile(),
-        loadDeliveries(),
-        loadStatistics(),
-        loadEarnings()
-      ]);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      showToast(error.message || 'Failed to load data', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadProfile = async () => {
+  // Define data loaders for each section
+  const loadProfile = useCallback(async () => {
     try {
       const response = await getDeliveryProfile();
       if (response.success) {
@@ -121,19 +69,25 @@ const DeliveryDashboard = () => {
       }
     } catch (error) {
       console.error('Error loading profile:', error);
+    } finally {
+      setIsLoadingProfile(false);
     }
-  };
+  }, []);
 
-  const loadDeliveries = async () => {
+  const loadDeliveries = useCallback(async (page = null) => {
     try {
-      const response = await getDeliveryAssignments();
+      const currentPage = page !== null ? page : deliveriesPagination.currentPage;
+      const response = await getDeliveryAssignments(currentPage, deliveriesPagination.deliveriesPerPage);
       if (response.success) {
         setDeliveries(response.deliveries);
+        if (response.pagination) {
+          setDeliveriesPagination(response.pagination);
+        }
       }
     } catch (error) {
       console.error('Error loading deliveries:', error);
     }
-  };
+  }, [deliveriesPagination.currentPage, deliveriesPagination.deliveriesPerPage]);
 
   const handleDeclineDelivery = async (deliveryId) => {
     try {
@@ -149,7 +103,7 @@ const DeliveryDashboard = () => {
     }
   };
 
-  const loadStatistics = async () => {
+  const loadStatistics = useCallback(async () => {
     try {
       const response = await getDeliveryStatistics();
       if (response.success) {
@@ -158,9 +112,9 @@ const DeliveryDashboard = () => {
     } catch (error) {
       console.error('Error loading statistics:', error);
     }
-  };
+  }, []);
 
-  const loadEarnings = async () => {
+  const loadEarnings = useCallback(async () => {
     try {
       const response = await getDeliveryEarnings();
       if (response.success) {
@@ -169,7 +123,55 @@ const DeliveryDashboard = () => {
     } catch (error) {
       console.error('Error loading earnings:', error);
     }
-  };
+  }, []);
+
+  // Define data loaders for each section
+  const dataLoaders = useMemo(() => ({
+    dashboard: [loadDeliveries, loadStatistics],
+    deliveries: [loadDeliveries, loadStatistics],
+    earnings: [loadEarnings],
+    'profile-settings': [loadProfile],
+    'account-settings': [loadProfile]
+  }), [loadDeliveries, loadStatistics, loadEarnings, loadProfile]);
+
+  // Use lazy loading hook
+  const { isLoading, isSectionLoaded, canRenderSection, canNavigate, reloadSection, initialLoadComplete, loadingRef } = useLazyDashboardData(
+    activePage,
+    dataLoaders
+  );
+
+  // Navigation handler - prevent navigation while loading
+  const handleNavigate = useCallback((page) => {
+    // Use ref for immediate check to prevent race conditions
+    if (loadingRef.current || isLoading) {
+      console.log('⏸️ Navigation blocked - loading in progress');
+      return;
+    }
+    console.log(`✅ Navigating to: ${page}`);
+    setActivePage(page);
+  }, [isLoading, loadingRef]);
+
+  // Load profile on mount
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  // Get current location on mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCurrentLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.log('Error getting location:', error);
+        }
+      );
+    }
+  }, []);
 
   const showToast = (message, type = 'info') => {
     const toast = document.createElement('div');
@@ -489,22 +491,81 @@ const DeliveryDashboard = () => {
     </section>
   );
 
-  const renderDeliveriesPage = () => (
-    <section className="space-y-4">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-lg font-semibold">Delivery Assignments</h3>
-        <button
-          onClick={async () => {
-            await Promise.all([loadDeliveries(), loadStatistics()]);
-            showToast('Deliveries refreshed!', 'success');
-          }}
-          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
-        >
-          🔄 Refresh Deliveries
-        </button>
-      </div>
-      <div className="space-y-4">
-        {deliveries.map(delivery => (
+  const renderDeliveriesPage = () => {
+    // Filter deliveries based on search term and status
+    const filteredDeliveries = deliveries.filter(delivery => {
+      const matchesSearch = !deliverySearchTerm || 
+        delivery.id.toString().toLowerCase().includes(deliverySearchTerm.toLowerCase()) ||
+        delivery.orderId?.toString().toLowerCase().includes(deliverySearchTerm.toLowerCase()) ||
+        delivery.customerName?.toLowerCase().includes(deliverySearchTerm.toLowerCase()) ||
+        delivery.customerPhone?.toLowerCase().includes(deliverySearchTerm.toLowerCase()) ||
+        delivery.pickupAddress?.toLowerCase().includes(deliverySearchTerm.toLowerCase()) ||
+        delivery.deliveryAddress?.toLowerCase().includes(deliverySearchTerm.toLowerCase());
+      
+      const matchesStatus = !deliveryStatusFilter || delivery.status === deliveryStatusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+
+    return (
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 className="text-lg font-semibold">Delivery Assignments ({deliveriesPagination.totalDeliveries})</h3>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              placeholder="Search deliveries..."
+              value={deliverySearchTerm}
+              onChange={(e) => setDeliverySearchTerm(e.target.value)}
+              className="px-3 py-2 rounded-xl border outline-none"
+            />
+            <select
+              value={deliveryStatusFilter}
+              onChange={(e) => setDeliveryStatusFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl border"
+            >
+              <option value="">All Status</option>
+              <option value="Assigned">Assigned</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Picked Up">Picked Up</option>
+              <option value="In Transit">In Transit</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+            <button
+              onClick={async () => {
+                await Promise.all([loadDeliveries(), loadStatistics()]);
+                showToast('Deliveries refreshed!', 'success');
+              }}
+              className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm"
+            >
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {filteredDeliveries.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📦</div>
+              <h3 className="text-xl font-semibold mb-2">No Deliveries Found</h3>
+              <p className="text-gray-600 mb-4">
+                {deliverySearchTerm || deliveryStatusFilter 
+                  ? 'No deliveries match your search criteria. Try adjusting your filters.'
+                  : 'There are currently no delivery assignments available.'}
+              </p>
+              {(deliverySearchTerm || deliveryStatusFilter) && (
+                <button
+                  onClick={() => {
+                    setDeliverySearchTerm('');
+                    setDeliveryStatusFilter('');
+                  }}
+                  className="text-blue-600 hover:underline text-sm"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredDeliveries.map(delivery => (
           <div key={delivery.id} className={`card p-4 hover-animate ${getStatusBackgroundColor(getDisplayStatus(delivery))}`}>
             <div className="flex justify-between items-start mb-3">
               <div>
@@ -603,11 +664,58 @@ const DeliveryDashboard = () => {
                 </button>
               )}
             </div>
+            </div>
+          ))
+          )}
+        </div>
+
+        {/* Pagination Controls */}
+        {deliveriesPagination.totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 p-4 bg-white rounded-lg border">
+          <div className="text-sm text-gray-600">
+            Showing page {deliveriesPagination.currentPage} of {deliveriesPagination.totalPages}
           </div>
-        ))}
-      </div>
-    </section>
-  );
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                const newPage = deliveriesPagination.currentPage - 1;
+                setIsPaginationLoading(true);
+                setDeliveriesPagination(prev => ({ ...prev, currentPage: newPage }));
+                await loadDeliveries(newPage);
+                setIsPaginationLoading(false);
+              }}
+              disabled={deliveriesPagination.currentPage === 1 || isPaginationLoading}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                deliveriesPagination.currentPage === 1 || isPaginationLoading
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
+              }`}
+            >
+              ← Previous
+            </button>
+            <button
+              onClick={async () => {
+                const newPage = deliveriesPagination.currentPage + 1;
+                setIsPaginationLoading(true);
+                setDeliveriesPagination(prev => ({ ...prev, currentPage: newPage }));
+                await loadDeliveries(newPage);
+                setIsPaginationLoading(false);
+              }}
+              disabled={deliveriesPagination.currentPage === deliveriesPagination.totalPages || isPaginationLoading}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                deliveriesPagination.currentPage === deliveriesPagination.totalPages || isPaginationLoading
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
+              }`}
+            >
+              Next →
+            </button>
+          </div>
+          </div>
+        )}
+      </section>
+    );
+  };
 
   const renderEarningsPage = () => (
     <section className="space-y-6">
@@ -671,6 +779,43 @@ const DeliveryDashboard = () => {
 
 
   const renderCurrentPage = () => {
+    // Don't render section content until data is loaded
+    if (!canRenderSection(activePage)) {
+      return (
+        <div className="space-y-6">
+          {activePage === 'dashboard' && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="stat-card" count={4} />
+              </div>
+              <div className="space-y-4">
+                <SkeletonLoader variant="delivery-card" count={4} />
+              </div>
+            </>
+          )}
+          {activePage === 'deliveries' && (
+            <>
+              <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-4">
+                <SkeletonLoader variant="delivery-card" count={6} />
+              </div>
+            </>
+          )}
+          {activePage === 'earnings' && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <SkeletonLoader variant="stat-card" count={3} />
+              </div>
+              <SkeletonLoader variant="chart" count={1} />
+            </>
+          )}
+          {(activePage === 'profile-settings' || activePage === 'account-settings') && (
+            <SkeletonLoader variant="profile" count={1} />
+          )}
+        </div>
+      );
+    }
+
     switch (activePage) {
       case 'dashboard':
         return renderDashboardPage();
@@ -684,7 +829,7 @@ const DeliveryDashboard = () => {
             userType="delivery"
             userData={profile}
             onUpdate={handleProfileUpdate}
-            onCancel={() => setActivePage('dashboard')}
+            onCancel={() => handleNavigate('dashboard')}
           />
         );
       case 'account-settings':
@@ -695,7 +840,7 @@ const DeliveryDashboard = () => {
             onUpdateEmail={handleEmailUpdate}
             onUpdatePhone={handlePhoneUpdate}
             onUpdatePassword={handlePasswordUpdate}
-            onCancel={() => setActivePage('dashboard')}
+            onCancel={() => handleNavigate('dashboard')}
           />
         );
       default:
@@ -728,12 +873,33 @@ const DeliveryDashboard = () => {
     navigate('/delivery/login');
   };
 
-  if (isLoading) {
+  // Show loading state only while initial profile is being fetched
+  if (isLoadingProfile) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+        <div className="h-20 bg-white border-b border-gray-200 animate-pulse">
+          <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
+            <div className="h-8 bg-gray-200 rounded w-32"></div>
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+        <div className="flex h-[calc(100vh-80px)]">
+          <div className="w-64 bg-white border-r border-gray-200 p-4 space-y-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SkeletonLoader variant="stat-card" count={4} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -745,7 +911,7 @@ const DeliveryDashboard = () => {
       <DashboardNavbar 
         userType="delivery" 
         onLogout={handleLogout} 
-        onNavigate={setActivePage}
+        onNavigate={handleNavigate}
         userData={profile}
         onToggleSidebar={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
       />
@@ -753,13 +919,14 @@ const DeliveryDashboard = () => {
       {/* Main Layout */}
       <div className="flex h-[calc(100vh-80px)]">
         {/* Sidebar */}
-        <DashboardSidebar 
-          activePage={activePage} 
-          setActivePage={setActivePage} 
+        <DashboardSidebar
+          activePage={activePage}
+          setActivePage={handleNavigate}
           userType="delivery"
           userData={profile}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
+          isLoading={isLoading}
         />
 
         {/* Main content */}
@@ -1067,6 +1234,8 @@ const DeliveryDashboard = () => {
                       </div>
                     )}
               
+      {/* Loading Progress Bar */}
+      <LoadingProgressBar isLoading={isLoading || isPaginationLoading} />
                   </div>
   );
 };
