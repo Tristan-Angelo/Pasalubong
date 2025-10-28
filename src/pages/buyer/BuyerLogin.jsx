@@ -119,9 +119,16 @@ const BuyerLogin = () => {
         sessionStorage.setItem('buyer_user', userData);
       }
 
-      // Navigate to dashboard after delay
+      // Check if face is registered
+      const shouldSetupFace = !response.user.isFaceRegistered;
+
+      // Navigate to appropriate page after delay
       setTimeout(() => {
-        navigate('/buyer/dashboard');
+        if (shouldSetupFace) {
+          navigate('/buyer/face-setup');
+        } else {
+          navigate('/buyer/dashboard');
+        }
       }, 1500);
     } catch (err) {
       const errorMessage = err.message || 'Login failed. Please try again.';

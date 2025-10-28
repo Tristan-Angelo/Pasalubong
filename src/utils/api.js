@@ -470,6 +470,25 @@ export const changeBuyerPassword = async (passwordData) => {
   });
 };
 
+// Face Recognition
+export const registerBuyerFace = async (faceDescriptor) => {
+  return buyerApiCall('/buyer/face/register', {
+    method: 'POST',
+    body: JSON.stringify({ faceDescriptor })
+  });
+};
+
+export const verifyBuyerFace = async (faceDescriptor) => {
+  return buyerApiCall('/buyer/face/verify', {
+    method: 'POST',
+    body: JSON.stringify({ faceDescriptor })
+  });
+};
+
+export const getBuyerFaceStatus = async () => {
+  return buyerApiCall('/buyer/face/status', { method: 'GET' });
+};
+
 // Products
 export const getBuyerProducts = async (params = {}) => {
   const queryString = new URLSearchParams(params).toString();

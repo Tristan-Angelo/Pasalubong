@@ -7,6 +7,7 @@ import BuyerRegister from './pages/buyer/BuyerRegister';
 import BuyerForgotPassword from './pages/buyer/BuyerForgotPassword';
 import BuyerResetPassword from './pages/buyer/BuyerResetPassword';
 import BuyerDashboard from './pages/buyer/BuyerDashboard';
+import BuyerFaceSetup from './pages/buyer/BuyerFaceSetup';
 import SellerLogin from './pages/seller/SellerLogin';
 import SellerRegister from './pages/seller/SellerRegister';
 import SellerForgotPassword from './pages/seller/SellerForgotPassword';
@@ -36,6 +37,14 @@ function App() {
           <Route path="/buyer/forgot-password" element={<BuyerForgotPassword />} />
           <Route path="/buyer/reset-password" element={<BuyerResetPassword />} />
           <Route path="/buyer/verify-email" element={<VerifyEmail />} />
+          <Route 
+            path="/buyer/face-setup" 
+            element={
+              <ProtectedRoute userType="buyer">
+                <BuyerFaceSetup />
+              </ProtectedRoute>
+            } 
+          />
           <Route 
             path="/buyer/dashboard" 
             element={

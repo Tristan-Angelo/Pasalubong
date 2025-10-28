@@ -12,6 +12,7 @@ import ProductViewModal from '../../components/ProductViewModal';
 import ProductCard from '../../components/ProductCard';
 import ReviewModal from '../../components/ReviewModal';
 import FaceCaptureModal from '../../components/FaceCaptureModal';
+import FaceVerification from '../../components/FaceVerification';
 import LoadingProgressBar from '../../components/LoadingProgressBar';
 import SkeletonLoader from '../../components/SkeletonLoader';
 import useLazyDashboardData from '../../hooks/useLazyDashboardData';
@@ -36,7 +37,9 @@ import {
   setDefaultAddress,
   getBuyerOrders,
   placeBuyerOrder,
-  submitOrderReviews
+  submitOrderReviews,
+  verifyBuyerFace,
+  getBuyerFaceStatus
 } from '../../utils/api';
 import { getStatusChipColor, getStatusBackgroundColor, getStatusIcon, getDisplayStatus } from '../../utils/orderStatusStyles';
 
@@ -51,9 +54,12 @@ const BuyerDashboard = () => {
   const [products, setProducts] = useState([]);
   const [profile, setProfile] = useState(null);
   const [capturedFaceData, setCapturedFaceData] = useState(null);
+  const [faceVerified, setFaceVerified] = useState(false);
+  const [isFaceRegistered, setIsFaceRegistered] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showTrackOrderModal, setShowTrackOrderModal] = useState(false);
   const [showFaceCaptureModal, setShowFaceCaptureModal] = useState(false);
+  const [showFaceVerificationModal, setShowFaceVerificationModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -235,6 +241,19 @@ const BuyerDashboard = () => {
     dataLoaders
   );
 
+  // Check face registration status on mount
+  useEffect(() => {
+    const checkFaceStatus = async () => {
+      try {
+        const response = await getBuyerFaceStatus();
+        setIsFaceRegistered(response.isFaceRegistered || false);
+      } catch (error) {
+        console.error('Error checking face status:', error);
+      }
+    };
+    checkFaceStatus();
+  }, []);
+
   // Load profile on mount - but don't block UI
   useEffect(() => {
     loadProfileData();
@@ -265,7 +284,7 @@ const BuyerDashboard = () => {
   // Reload products when filters change
   const prevFiltersRef = useRef({ searchTerm, categoryFilter, sortBy });
   const isFirstRenderRef = useRef(true);
-  
+
   useEffect(() => {
     // Skip on first render
     if (isFirstRenderRef.current) {
@@ -274,7 +293,7 @@ const BuyerDashboard = () => {
       return;
     }
 
-    const filtersChanged = 
+    const filtersChanged =
       prevFiltersRef.current.searchTerm !== searchTerm ||
       prevFiltersRef.current.categoryFilter !== categoryFilter ||
       prevFiltersRef.current.sortBy !== sortBy;
@@ -282,7 +301,7 @@ const BuyerDashboard = () => {
     if (filtersChanged) {
       console.log('🔄 Filters changed, reloading products...', { searchTerm, categoryFilter, sortBy });
       prevFiltersRef.current = { searchTerm, categoryFilter, sortBy };
-      
+
       if (!isLoading && activePage === 'shop' && isSectionLoaded('shop')) {
         reloadSection('shop');
       }
@@ -373,9 +392,9 @@ const BuyerDashboard = () => {
       }
 
       // Optimistic update - update UI immediately
-      setCart(prevCart => 
-        prevCart.map(cartItem => 
-          cartItem.id === productId 
+      setCart(prevCart =>
+        prevCart.map(cartItem =>
+          cartItem.id === productId
             ? { ...cartItem, quantity: newQuantity }
             : cartItem
         )
@@ -430,8 +449,8 @@ const BuyerDashboard = () => {
       return;
     }
 
-    if (!capturedFaceData) {
-      showToast('Please capture your face for verification', 'error');
+    if (!faceVerified) {
+      showToast('Please verify your face for verification', 'error');
       return;
     }
 
@@ -482,13 +501,14 @@ const BuyerDashboard = () => {
         addressId: deliveryAddress.id,
         paymentMethod: paymentMethod === 'cod' ? 'Cash on Delivery' : 'Palawan Pay',
         specialInstructions: '',
-        faceVerification: capturedFaceData,
+        faceVerification: faceVerified ? 'verified' : null,
         proofOfPaymentsBySeller: paymentMethod === 'palawanpay' ? proofOfPaymentsBySeller : null
       };
 
       const response = await placeBuyerOrder(orderData);
       if (response.success) {
         setCapturedFaceData(null);
+        setFaceVerified(false);
         setProofOfPaymentsBySeller({});
         setProofOfPaymentPreviewsBySeller({});
         setPaymentMethod('cod');
@@ -884,13 +904,13 @@ const BuyerDashboard = () => {
   const renderOrdersPage = () => {
     // Filter orders based on search term and status
     const filteredOrders = orders.filter(order => {
-      const matchesSearch = !orderSearchTerm || 
+      const matchesSearch = !orderSearchTerm ||
         order.id?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
         order.orderNumber?.toString().toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
         order.items?.some(item => item.name?.toLowerCase().includes(orderSearchTerm.toLowerCase()));
-      
+
       const matchesStatus = !orderStatusFilter || order.status === orderStatusFilter;
-      
+
       return matchesSearch && matchesStatus;
     });
 
@@ -937,7 +957,7 @@ const BuyerDashboard = () => {
               <div className="text-6xl mb-4">📦</div>
               <h3 className="text-xl font-semibold mb-2">No Orders Found</h3>
               <p className="text-gray-600 mb-4">
-                {orderSearchTerm || orderStatusFilter 
+                {orderSearchTerm || orderStatusFilter
                   ? 'No orders match your search criteria. Try adjusting your filters.'
                   : 'You haven\'t placed any orders yet.'}
               </p>
@@ -958,83 +978,83 @@ const BuyerDashboard = () => {
               <div
                 key={order.id}
                 className={`card p-4 hover-animate cursor-pointer hover:shadow-lg transition-shadow ${getStatusBackgroundColor(getDisplayStatus(order))}`}
-              onClick={() => {
-                setSelectedOrder(order);
-                setShowTrackOrderModal(true);
-              }}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-semibold">Order #{order.id}</h3>
-                  <p className="text-sm text-gray-600">{new Date(order.date).toLocaleDateString()}</p>
-                  {order.deliveryPerson && (
-                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm font-medium text-green-900 mb-2">🚚 Delivery Person</p>
-                      <div className="flex items-start gap-2">
-                        {/* Delivery Person Photo */}
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-green-100 flex-shrink-0 border-2 border-green-300">
-                          {order.deliveryPerson.photo ? (
-                            <img
-                              src={order.deliveryPerson.photo}
-                              alt={order.deliveryPerson.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-green-600 text-lg font-semibold">
-                              🚚
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs text-green-700 font-semibold">{order.deliveryPerson.name}</p>
-                          <p className="text-xs text-green-700">📱 {order.deliveryPerson.phone}</p>
-                          <p className="text-xs text-green-700">🚗 {order.deliveryPerson.vehicleType} ({order.deliveryPerson.vehiclePlate})</p>
-                          <p className="text-xs text-green-700">📍 {order.deliveryStatus}</p>
+                onClick={() => {
+                  setSelectedOrder(order);
+                  setShowTrackOrderModal(true);
+                }}
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-semibold">Order #{order.id}</h3>
+                    <p className="text-sm text-gray-600">{new Date(order.date).toLocaleDateString()}</p>
+                    {order.deliveryPerson && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-sm font-medium text-green-900 mb-2">🚚 Delivery Person</p>
+                        <div className="flex items-start gap-2">
+                          {/* Delivery Person Photo */}
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-green-100 flex-shrink-0 border-2 border-green-300">
+                            {order.deliveryPerson.photo ? (
+                              <img
+                                src={order.deliveryPerson.photo}
+                                alt={order.deliveryPerson.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-green-600 text-lg font-semibold">
+                                🚚
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs text-green-700 font-semibold">{order.deliveryPerson.name}</p>
+                            <p className="text-xs text-green-700">📱 {order.deliveryPerson.phone}</p>
+                            <p className="text-xs text-green-700">🚗 {order.deliveryPerson.vehicleType} ({order.deliveryPerson.vehiclePlate})</p>
+                            <p className="text-xs text-green-700">📍 {order.deliveryStatus}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">₱{order.total}</p>
+                    <span className={`chip ${getStatusColor(getDisplayStatus(order))}`}>
+                      {getStatusIcon(getDisplayStatus(order))} {getDisplayStatus(order)}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold">₱{order.total}</p>
-                  <span className={`chip ${getStatusColor(getDisplayStatus(order))}`}>
-                    {getStatusIcon(getDisplayStatus(order))} {getDisplayStatus(order)}
-                  </span>
+                <div className="text-sm text-gray-600 mb-3">
+                  {order.items.map(item => `${item.name} (${item.quantity}x)`).join(', ')}
                 </div>
-              </div>
-              <div className="text-sm text-gray-600 mb-3">
-                {order.items.map(item => `${item.name} (${item.quantity}x)`).join(', ')}
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedOrder(order);
-                    setShowTrackOrderModal(true);
-                  }}
-                  className="text-rose-600 hover:underline text-sm"
-                >
-                  View Details
-                </button>
-                {order.status === 'Delivered' && order.canReview !== false && (
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedOrderForReview(order);
-                      setShowReviewModal(true);
+                      setSelectedOrder(order);
+                      setShowTrackOrderModal(true);
                     }}
-                    className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                    className="text-rose-600 hover:underline text-sm"
                   >
-                    ⭐ Rate Order
+                    View Details
                   </button>
-                )}
-                {order.status === 'Delivered' && order.canReview === false && (
-                  <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-lg text-sm font-medium">
-                    ✅ Reviewed
-                  </span>
-                )}
+                  {order.status === 'Delivered' && order.canReview !== false && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOrderForReview(order);
+                        setShowReviewModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      ⭐ Rate Order
+                    </button>
+                  )}
+                  {order.status === 'Delivered' && order.canReview === false && (
+                    <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-lg text-sm font-medium">
+                      ✅ Reviewed
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
             ))
           )}
         </div>
@@ -1055,11 +1075,10 @@ const BuyerDashboard = () => {
                   setIsPaginationLoading(false);
                 }}
                 disabled={ordersPagination.currentPage === 1 || isPaginationLoading}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  ordersPagination.currentPage === 1 || isPaginationLoading
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${ordersPagination.currentPage === 1 || isPaginationLoading
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-rose-500 hover:bg-rose-600 text-white'
-                }`}
+                  }`}
               >
                 ← Previous
               </button>
@@ -1072,11 +1091,10 @@ const BuyerDashboard = () => {
                   setIsPaginationLoading(false);
                 }}
                 disabled={ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${ordersPagination.currentPage === ordersPagination.totalPages || isPaginationLoading
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-rose-500 hover:bg-rose-600 text-white'
-                }`}
+                  }`}
               >
                 Next →
               </button>
@@ -1392,16 +1410,16 @@ const BuyerDashboard = () => {
     // Don't render section content until data is loaded
     const canRender = canRenderSection(activePage);
     const sectionLoaded = isSectionLoaded(activePage);
-    
-    console.log('🎨 Render check:', { 
-      activePage, 
-      canRender, 
-      sectionLoaded, 
+
+    console.log('🎨 Render check:', {
+      activePage,
+      canRender,
+      sectionLoaded,
       isLoading,
       initialLoadComplete,
       isLoadingProfile
     });
-    
+
     // Show skeleton only if we haven't completed initial load AND section is not loaded
     // OR if we're still loading profile for the first time
     if ((!initialLoadComplete && !canRender) || (isLoadingProfile && !initialLoadComplete)) {
@@ -1532,7 +1550,7 @@ const BuyerDashboard = () => {
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 text-gray-800">
       {/* Loading Progress Bar */}
       <LoadingProgressBar isLoading={isLoading} />
-      
+
       {/* Dashboard Navbar */}
       <DashboardNavbar
         userType="buyer"
@@ -1598,10 +1616,10 @@ const BuyerDashboard = () => {
                   <React.Fragment key={step.num}>
                     <div className="flex flex-col items-center flex-1">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${checkoutStep === step.num
-                          ? 'bg-rose-500 text-white scale-110'
-                          : checkoutStep > step.num
-                            ? 'bg-green-500 text-white'
-                            : 'bg-gray-200 text-gray-500'
+                        ? 'bg-rose-500 text-white scale-110'
+                        : checkoutStep > step.num
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-200 text-gray-500'
                         }`}>
                         {checkoutStep > step.num ? '✓' : step.icon}
                       </div>
@@ -1702,8 +1720,8 @@ const BuyerDashboard = () => {
                         <div
                           onClick={() => setSelectedDeliveryAddressId('profile')}
                           className={`p-3 border-2 rounded-xl cursor-pointer transition-all ${selectedDeliveryAddressId === 'profile'
-                              ? 'border-rose-500 bg-rose-50'
-                              : 'border-gray-200 hover:border-rose-300'
+                            ? 'border-rose-500 bg-rose-50'
+                            : 'border-gray-200 hover:border-rose-300'
                             }`}
                         >
                           <div className="flex items-start gap-2">
@@ -1744,8 +1762,8 @@ const BuyerDashboard = () => {
                             key={address.id}
                             onClick={() => setSelectedDeliveryAddressId(address.id)}
                             className={`p-3 border-2 rounded-xl cursor-pointer transition-all ${selectedDeliveryAddressId === address.id
-                                ? 'border-rose-500 bg-rose-50'
-                                : 'border-gray-200 hover:border-rose-300'
+                              ? 'border-rose-500 bg-rose-50'
+                              : 'border-gray-200 hover:border-rose-300'
                               }`}
                           >
                             <div className="flex items-start gap-2">
@@ -2030,41 +2048,64 @@ const BuyerDashboard = () => {
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg mb-4">Identity Verification</h3>
 
-                  <div className="border rounded-xl p-4 bg-blue-50 border-blue-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-blue-600">🔒</span>
-                      <label className="text-sm font-medium text-blue-800">Face Verification Required</label>
+                  {!isFaceRegistered ? (
+                    <div className="border rounded-xl p-4 bg-yellow-50 border-yellow-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-yellow-600">⚠️</span>
+                        <label className="text-sm font-medium text-yellow-800">Face Not Registered</label>
+                      </div>
+                      <p className="text-xs text-yellow-700 mb-3">
+                        You need to register your face before placing orders. This is a one-time setup for security.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowCheckoutModal(false);
+                          navigate('/buyer/face-setup');
+                        }}
+                        className="w-full bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-lg text-sm"
+                      >
+                        Register Face Now
+                      </button>
                     </div>
+                  ) : (
+                    <div className="border rounded-xl p-4 bg-blue-50 border-blue-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-blue-600">🔒</span>
+                        <label className="text-sm font-medium text-blue-800">Face Verification Required</label>
+                      </div>
 
-                    {capturedFaceData ? (
-                      <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-green-200">
-                        <img src={capturedFaceData} alt="Captured face" className="w-20 h-20 rounded-full object-cover border-2 border-green-500" />
-                        <div className="flex-1">
-                          <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm font-medium">
-                            <span>✅</span>
-                            <span>Face Captured Successfully</span>
+                      {faceVerified ? (
+                        <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-green-200">
+                          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center border-2 border-green-500">
+                            <span className="text-3xl">✅</span>
                           </div>
-                          <p className="text-xs text-gray-600 mt-1">Identity verification ready</p>
+                          <div className="flex-1">
+                            <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm font-medium">
+                              <span>✅</span>
+                              <span>Face Verified Successfully</span>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">Identity confirmed</p>
+                          </div>
+                          <button
+                            onClick={() => setFaceVerified(false)}
+                            className="text-blue-600 hover:text-blue-800 text-sm underline"
+                          >
+                            Verify Again
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setCapturedFaceData(null)}
-                          className="text-blue-600 hover:text-blue-800 text-sm underline"
-                        >
-                          Retake
-                        </button>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-xs text-blue-700 mb-3">Please capture your face for secure checkout verification to prevent fraud and ensure order authenticity.</p>
-                        <button
-                          onClick={() => setShowFaceCaptureModal(true)}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg text-sm"
-                        >
-                          📷 Capture Face
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div>
+                          <p className="text-xs text-blue-700 mb-3">Please verify your face for secure checkout to prevent fraud and ensure order authenticity.</p>
+                          <button
+                            onClick={() => setShowFaceVerificationModal(true)}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg text-sm"
+                          >
+                            📷 Verify Face
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium mb-2">Special Instructions (Optional)</label>
@@ -2171,13 +2212,15 @@ const BuyerDashboard = () => {
                   <div className="border rounded-xl p-4 bg-gray-50">
                     <h4 className="font-medium text-sm mb-2 text-gray-700">🔒 Verification</h4>
                     <div className="flex items-center gap-2">
-                      {capturedFaceData ? (
+                      {faceVerified ? (
                         <>
-                          <img src={capturedFaceData} alt="Face" className="w-12 h-12 rounded-full object-cover border-2 border-green-500" />
-                          <span className="text-sm text-green-600 font-medium">✅ Face verified</span>
+                          <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center border-2 border-green-500">
+                            <span className="text-2xl">✅</span>
+                          </div>
+                          <span className="text-sm text-green-600 font-medium">✅ Face verified successfully</span>
                         </>
                       ) : (
-                        <span className="text-sm text-red-600">❌ Face not captured</span>
+                        <span className="text-sm text-red-600">❌ Face not verified</span>
                       )}
                     </div>
                   </div>
@@ -2200,8 +2243,8 @@ const BuyerDashboard = () => {
                     onClick={() => setCheckoutStep(prev => Math.max(1, prev - 1))}
                     disabled={checkoutStep === 1}
                     className={`px-6 py-2 rounded-lg font-medium transition-colors ${checkoutStep === 1
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
                       }`}
                   >
                     ← Back
@@ -2230,8 +2273,12 @@ const BuyerDashboard = () => {
                           }
                         }
                       } else if (checkoutStep === 3) {
-                        if (!capturedFaceData) {
-                          showToast('Please capture your face for verification', 'error');
+                        if (!isFaceRegistered) {
+                          showToast('Please register your face first', 'error');
+                          return;
+                        }
+                        if (!faceVerified) {
+                          showToast('Please verify your face for verification', 'error');
                           return;
                         }
                       }
@@ -2258,11 +2305,10 @@ const BuyerDashboard = () => {
                     <button
                       onClick={placeOrder}
                       disabled={isPlacingOrder}
-                      className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${
-                        isPlacingOrder
+                      className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${isPlacingOrder
                           ? 'bg-gray-400 cursor-not-allowed'
                           : 'bg-rose-500 hover:bg-rose-600 btn-shine'
-                      } text-white`}
+                        } text-white`}
                     >
                       {isPlacingOrder ? (
                         <span className="flex items-center justify-center gap-2">
@@ -2646,6 +2692,38 @@ const BuyerDashboard = () => {
         onSubmit={handleSubmitReviews}
         userProfile={profile}
       />
+
+      {/* Face Verification Modal */}
+      {showFaceVerificationModal && (
+        <FaceVerification
+          onSuccess={async (faceDescriptor) => {
+            try {
+              const result = await verifyBuyerFace(faceDescriptor);
+              if (result.isMatch) {
+                setFaceVerified(true);
+                // Set a placeholder for capturedFaceData to indicate verification success
+                setCapturedFaceData('verified');
+                setShowFaceVerificationModal(false);
+                showToast('Face verified successfully!', 'success');
+                return result;
+              } else {
+                showToast('Face verification failed. Please try again.', 'error');
+                return result;
+              }
+            } catch (error) {
+              console.error('Face verification error:', error);
+              showToast('Failed to verify face. Please try again.', 'error');
+              throw error;
+            }
+          }}
+          onCancel={() => setShowFaceVerificationModal(false)}
+          onFail={() => {
+            setShowFaceVerificationModal(false);
+            setShowCheckoutModal(false);
+            showToast('Face verification failed. Order cancelled for security.', 'error');
+          }}
+        />
+      )}
 
       {/* Loading Progress Bar */}
       <LoadingProgressBar isLoading={isLoading || isPaginationLoading} />

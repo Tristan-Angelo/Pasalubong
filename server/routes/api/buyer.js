@@ -1261,6 +1261,116 @@ router.put('/orders/:id/cancel', async (req, res) => {
   }
 });
 
+// ============= FACE RECOGNITION ROUTES =============
+
+// Register face descriptor
+router.post('/face/register', async (req, res) => {
+  try {
+    const { faceDescriptor } = req.body;
+
+    if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length !== 128) {
+      return res.status(400).json({
+        error: 'Invalid face descriptor',
+        message: 'Face descriptor must be an array of 128 numbers'
+      });
+    }
+
+    // Update buyer with face descriptor
+    const buyer = await Buyer.findByIdAndUpdate(
+      req.buyerId,
+      {
+        faceDescriptor,
+        isFaceRegistered: true,
+        faceRegisteredAt: new Date()
+      },
+      { new: true }
+    ).select('-password -verificationToken -resetPasswordToken -resetPasswordCode');
+
+    res.json({
+      success: true,
+      message: 'Face registered successfully',
+      isFaceRegistered: buyer.isFaceRegistered
+    });
+  } catch (error) {
+    console.error('Face registration error:', error);
+    res.status(500).json({
+      error: 'Failed to register face',
+      message: 'An error occurred while registering face'
+    });
+  }
+});
+
+// Verify face descriptor
+router.post('/face/verify', async (req, res) => {
+  try {
+    const { faceDescriptor } = req.body;
+
+    if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length !== 128) {
+      return res.status(400).json({
+        error: 'Invalid face descriptor',
+        message: 'Face descriptor must be an array of 128 numbers'
+      });
+    }
+
+    // Get buyer's stored face descriptor
+    const buyer = await Buyer.findById(req.buyerId).select('faceDescriptor isFaceRegistered');
+
+    if (!buyer.isFaceRegistered || !buyer.faceDescriptor) {
+      return res.status(400).json({
+        error: 'Face not registered',
+        message: 'Please register your face first'
+      });
+    }
+
+    // Calculate Euclidean distance between descriptors
+    const storedDescriptor = buyer.faceDescriptor;
+    let sumSquaredDiff = 0;
+    for (let i = 0; i < 128; i++) {
+      const diff = faceDescriptor[i] - storedDescriptor[i];
+      sumSquaredDiff += diff * diff;
+    }
+    const distance = Math.sqrt(sumSquaredDiff);
+
+    // Threshold for face match (typically 0.6)
+    const threshold = 0.6;
+    const isMatch = distance < threshold;
+
+    console.log(`Face verification: distance=${distance.toFixed(4)}, threshold=${threshold}, match=${isMatch}`);
+
+    res.json({
+      success: true,
+      isMatch,
+      distance: distance.toFixed(4),
+      message: isMatch ? 'Face verified successfully' : 'Face does not match'
+    });
+  } catch (error) {
+    console.error('Face verification error:', error);
+    res.status(500).json({
+      error: 'Failed to verify face',
+      message: 'An error occurred while verifying face'
+    });
+  }
+});
+
+// Check face registration status
+router.get('/face/status', async (req, res) => {
+  try {
+    const buyer = await Buyer.findById(req.buyerId).select('isFaceRegistered faceRegisteredAt');
+
+    res.json({
+      success: true,
+      isFaceRegistered: buyer.isFaceRegistered || false,
+      faceRegisteredAt: buyer.faceRegisteredAt || null
+    });
+  } catch (error) {
+    console.error('Face status check error:', error);
+    res.status(500).json({
+      error: 'Failed to check face status',
+      message: 'An error occurred while checking face status'
+    });
+  }
+});
+
 // ============= REVIEW ROUTES =============
 
 // Submit review for order items

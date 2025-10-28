@@ -73,6 +73,18 @@ const buyerSchema = new mongoose.Schema({
   photo: {
     type: String,
     default: null
+  },
+  faceDescriptor: {
+    type: [Number],
+    default: null
+  },
+  isFaceRegistered: {
+    type: Boolean,
+    default: false
+  },
+  faceRegisteredAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
