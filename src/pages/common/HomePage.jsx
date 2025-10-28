@@ -10,6 +10,7 @@ const HomePage = () => {
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   // Fetch featured products
   useEffect(() => {
@@ -168,6 +169,20 @@ const HomePage = () => {
     }
   }, [loading, featuredProducts]);
 
+  // Scroll to top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
@@ -225,7 +240,13 @@ const HomePage = () => {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16 reveal" style={{ transitionDelay: '0.3s' }}>
-            <button className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-white/25 backdrop-blur-sm border border-white/40 rounded-2xl hover:bg-white/35 transition-all duration-300 pulse-glow">
+            <button
+              onClick={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                navigate('/products');
+              }}
+              className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-white/25 backdrop-blur-sm border border-white/40 rounded-2xl hover:bg-white/35 transition-all duration-300 pulse-glow"
+            >
               <span className="mr-2">🛍️</span>
               Start Shopping Now
               <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,7 +254,13 @@ const HomePage = () => {
               </svg>
             </button>
 
-            <button className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-rose-600 bg-white/95 backdrop-blur-sm rounded-2xl hover:bg-white transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105">
+            <button
+              onClick={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                navigate('/seller/register');
+              }}
+              className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-rose-600 bg-white/95 backdrop-blur-sm rounded-2xl hover:bg-white transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105"
+            >
               <span className="mr-2">🏪</span>
               Become a Partner
             </button>
@@ -414,7 +441,15 @@ const HomePage = () => {
               <div className="w-16 h-16 bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl flex items-center justify-center text-2xl text-white mb-6">🛒</div>
               <h3 className="text-xl font-bold text-slate-900 mb-3">Premium Shopping</h3>
               <p className="text-professional mb-6">Access our curated selection of authentic Carigara and Barugo delicacies with enterprise-grade quality assurance.</p>
-              <button className="inline-flex items-center gap-2 text-white py-3 px-6 rounded-lg btn-shine font-medium shadow-professional">Browse Catalog</button>
+              <button
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  navigate('/products');
+                }}
+                className="inline-flex items-center gap-2 text-white py-3 px-6 rounded-lg btn-shine font-medium shadow-professional"
+              >
+                Browse Catalog
+              </button>
             </div>
 
             {/* Seller */}
@@ -422,7 +457,15 @@ const HomePage = () => {
               <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl flex items-center justify-center text-2xl text-white mb-6">🏪</div>
               <h3 className="text-xl font-bold text-slate-900 mb-3">Seller Partnership</h3>
               <p className="text-professional mb-6">Scale your business with our professional tools, analytics, and dedicated support for local entrepreneurs.</p>
-              <button className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white py-3 px-6 rounded-lg font-medium shadow-professional transition-all">Partner With Us</button>
+              <button
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  navigate('/seller/register');
+                }}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white py-3 px-6 rounded-lg font-medium shadow-professional transition-all"
+              >
+                Partner With Us
+              </button>
             </div>
 
             {/* Rider */}
@@ -430,7 +473,15 @@ const HomePage = () => {
               <div className="w-16 h-16 bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl flex items-center justify-center text-2xl text-white mb-6">🚴</div>
               <h3 className="text-xl font-bold text-slate-900 mb-3">Delivery Network</h3>
               <p className="text-professional mb-6">Join our professional delivery network with competitive rates, flexible schedules, and comprehensive support.</p>
-              <button className="inline-flex items-center gap-2 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white py-3 px-6 rounded-lg font-medium shadow-professional transition-all">Join Network</button>
+              <button
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  navigate('/delivery/register');
+                }}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white py-3 px-6 rounded-lg font-medium shadow-professional transition-all"
+              >
+                Join Network
+              </button>
             </div>
           </div>
         </div>
@@ -680,6 +731,25 @@ const HomePage = () => {
         </div>
       </section>
       <Footer />
+
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-8 right-8 z-50 w-12 h-12 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center group"
+          aria-label="Scroll to top"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6 transform group-hover:-translate-y-1 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 };

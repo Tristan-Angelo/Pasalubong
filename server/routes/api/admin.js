@@ -116,26 +116,96 @@ router.delete('/notifications/:id', authenticateAdmin, async (req, res) => {
 // Get pending approvals (sellers and delivery persons)
 router.get('/pending-approvals', authenticateAdmin, async (req, res) => {
   try {
-    const pendingSellers = await Seller.find({ 
-      approvalStatus: 'pending',
-      validIdFront: { $ne: null },
-      validIdBack: { $ne: null }
-    })
-    .select('businessName ownerName email phone businessType region province city barangay validIdFront validIdBack createdAt')
-    .lean();
+    const { page = 1, limit = 10, type } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const pendingDeliveries = await Delivery.find({ 
+    const query = { 
       approvalStatus: 'pending',
       validIdFront: { $ne: null },
       validIdBack: { $ne: null }
-    })
-    .select('fullname email phone vehicleType vehiclePlate licenseNumber region province city barangay validIdFront validIdBack createdAt')
-    .lean();
+    };
+
+    // If type is specified, only fetch that type
+    if (type === 'sellers') {
+      const totalSellers = await Seller.countDocuments(query);
+      const pendingSellers = await Seller.find(query)
+        .select('businessName ownerName email phone businessType region province city barangay validIdFront validIdBack createdAt')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean();
+
+      return res.json({
+        success: true,
+        pendingSellers: pendingSellers.map(s => ({ ...s, id: s._id })),
+        pendingDeliveries: [],
+        pagination: {
+          sellers: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalSellers / parseInt(limit)),
+            totalItems: totalSellers,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+    }
+
+    if (type === 'deliveries') {
+      const totalDeliveries = await Delivery.countDocuments(query);
+      const pendingDeliveries = await Delivery.find(query)
+        .select('fullname email phone vehicleType vehiclePlate licenseNumber region province city barangay validIdFront validIdBack createdAt')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean();
+
+      return res.json({
+        success: true,
+        pendingSellers: [],
+        pendingDeliveries: pendingDeliveries.map(d => ({ ...d, id: d._id })),
+        pagination: {
+          deliveries: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalDeliveries / parseInt(limit)),
+            totalItems: totalDeliveries,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+    }
+
+    // Fetch both types with pagination
+    const totalSellers = await Seller.countDocuments(query);
+    const totalDeliveries = await Delivery.countDocuments(query);
+
+    const pendingSellers = await Seller.find(query)
+      .select('businessName ownerName email phone businessType region province city barangay validIdFront validIdBack createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const pendingDeliveries = await Delivery.find(query)
+      .select('fullname email phone vehicleType vehiclePlate licenseNumber region province city barangay validIdFront validIdBack createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       success: true,
       pendingSellers: pendingSellers.map(s => ({ ...s, id: s._id })),
-      pendingDeliveries: pendingDeliveries.map(d => ({ ...d, id: d._id }))
+      pendingDeliveries: pendingDeliveries.map(d => ({ ...d, id: d._id })),
+      pagination: {
+        sellers: {
+          currentPage: 1,
+          totalPages: Math.ceil(totalSellers / parseInt(limit)),
+          totalItems: totalSellers,
+          itemsPerPage: parseInt(limit)
+        },
+        deliveries: {
+          currentPage: 1,
+          totalPages: Math.ceil(totalDeliveries / parseInt(limit)),
+          totalItems: totalDeliveries,
+          itemsPerPage: parseInt(limit)
+        }
+      }
     });
   } catch (error) {
     console.error('Get pending approvals error:', error);
@@ -441,9 +511,15 @@ router.put('/change-password', authenticateAdmin, async (req, res) => {
 // Get all customers (buyers)
 router.get('/customers', async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const totalCustomers = await Buyer.countDocuments();
     const customers = await Buyer.find()
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
       .lean();
 
     // Transform data to match frontend format
@@ -468,7 +544,13 @@ router.get('/customers', async (req, res) => {
 
     res.json({
       success: true,
-      customers: transformedCustomers
+      customers: transformedCustomers,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalCustomers / parseInt(limit)),
+        totalItems: totalCustomers,
+        itemsPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get customers error:', error);
@@ -482,11 +564,17 @@ router.get('/customers', async (req, res) => {
 // Get all sellers
 router.get('/sellers', async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     // Only fetch approved sellers (exclude pending and declined)
-    const sellers = await Seller.find({ approvalStatus: 'approved' })
+    const query = { approvalStatus: 'approved' };
+    const totalSellers = await Seller.countDocuments(query);
+    const sellers = await Seller.find(query)
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
       .sort({ createdAt: -1 })
-      .limit(1000)
+      .skip(skip)
+      .limit(parseInt(limit))
       .lean();
 
     // Transform data to match frontend format
@@ -512,7 +600,13 @@ router.get('/sellers', async (req, res) => {
 
     res.json({
       success: true,
-      sellers: transformedSellers
+      sellers: transformedSellers,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalSellers / parseInt(limit)),
+        totalItems: totalSellers,
+        itemsPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get sellers error:', error);
@@ -526,11 +620,17 @@ router.get('/sellers', async (req, res) => {
 // Get all riders (delivery partners)
 router.get('/riders', async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     // Only fetch approved riders (exclude pending and declined)
-    const riders = await Delivery.find({ approvalStatus: 'approved' })
+    const query = { approvalStatus: 'approved' };
+    const totalRiders = await Delivery.countDocuments(query);
+    const riders = await Delivery.find(query)
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
       .sort({ createdAt: -1 })
-      .limit(1000)
+      .skip(skip)
+      .limit(parseInt(limit))
       .lean();
 
     // Transform data to match frontend format
@@ -558,7 +658,13 @@ router.get('/riders', async (req, res) => {
 
     res.json({
       success: true,
-      riders: transformedRiders
+      riders: transformedRiders,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalRiders / parseInt(limit)),
+        totalItems: totalRiders,
+        itemsPerPage: parseInt(limit)
+      }
     });
   } catch (error) {
     console.error('Get riders error:', error);

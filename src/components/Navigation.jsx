@@ -169,40 +169,120 @@ const Navigation = () => {
       </div>
 
       {/* Mobile Menu - Shown at 991px and below when toggled */}
-      <div className={`mobile-nav-menu px-6 pb-4 space-y-2 text-sm ${isMobileMenuOpen ? 'block' : 'hidden'}`}>
-        <button onClick={() => handleNavClick('/#categories')} className="block w-full text-left py-2 border-b">Categories</button>
-        <button onClick={() => handleNavClick('/#featured')} className="block w-full text-left py-2 border-b">Featured</button>
-        <button onClick={() => handleNavClick('/#how-it-works')} className="block w-full text-left py-2 border-b">How it Works</button>
-        <button onClick={() => handleNavClick('/#testimonials')} className="block w-full text-left py-2 border-b">Testimonials</button>
+      <div className={`mobile-nav-menu px-6 pb-4 space-y-3 text-sm ${isMobileMenuOpen ? 'block' : 'hidden'}`}>
+        <button onClick={() => handleNavClick('/#categories')} className="block w-full text-left py-2.5 text-gray-700 hover:text-rose-600 transition-colors border-b border-gray-200">Categories</button>
+        <button onClick={() => handleNavClick('/#featured')} className="block w-full text-left py-2.5 text-gray-700 hover:text-rose-600 transition-colors border-b border-gray-200">Featured</button>
+        <button onClick={() => handleNavClick('/#how-it-works')} className="block w-full text-left py-2.5 text-gray-700 hover:text-rose-600 transition-colors border-b border-gray-200">How it Works</button>
+        <button onClick={() => handleNavClick('/#testimonials')} className="block w-full text-left py-2.5 text-gray-700 hover:text-rose-600 transition-colors border-b border-gray-200">Testimonials</button>
 
-        <button
-          onClick={() => {
-            setIsMobileRegisterOpen(!isMobileRegisterOpen);
-            setIsMobileLoginOpen(false);
-          }}
-          className="w-full text-left py-2 border-b"
-        >
-          Register
-        </button>
-        <div className={`pl-4 space-y-1 border-b pb-2 ${isMobileRegisterOpen ? 'block' : 'hidden'}`}>
-          <button onClick={() => handleNavClick('/buyer/register')} className="block w-full text-left py-1">Buyer</button>
-          <button onClick={() => handleNavClick('/delivery/register')} className="block w-full text-left py-1">Delivery</button>
-          <button onClick={() => handleNavClick('/seller/register')} className="block w-full text-left py-1">Seller</button>
+        {/* Register Section */}
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              setIsMobileRegisterOpen(!isMobileRegisterOpen);
+              setIsMobileLoginOpen(false);
+            }}
+            className="w-full flex items-center justify-between py-3 px-4 bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 rounded-lg text-rose-700 font-semibold transition-all"
+          >
+            <span className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+              </svg>
+              Register
+            </span>
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className={`h-5 w-5 transition-transform ${isMobileRegisterOpen ? 'rotate-180' : ''}`} 
+              viewBox="0 0 20 20" 
+              fill="currentColor"
+            >
+              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <div className={`mt-2 space-y-2 ${isMobileRegisterOpen ? 'block' : 'hidden'}`}>
+            <button 
+              onClick={() => handleNavClick('/buyer/register')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">👤</span>
+                <span className="font-medium">Buyer Account</span>
+              </span>
+            </button>
+            <button 
+              onClick={() => handleNavClick('/delivery/register')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">🚴</span>
+                <span className="font-medium">Rider Account</span>
+              </span>
+            </button>
+            <button 
+              onClick={() => handleNavClick('/seller/register')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">🏪</span>
+                <span className="font-medium">Seller Account</span>
+              </span>
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={() => {
-            setIsMobileLoginOpen(!isMobileLoginOpen);
-            setIsMobileRegisterOpen(false);
-          }}
-          className="w-full text-left py-2"
-        >
-          Login
-        </button>
-        <div className={`pl-4 space-y-1 ${isMobileLoginOpen ? 'block' : 'hidden'}`}>
-          <button onClick={() => handleNavClick('/buyer/login')} className="block w-full text-left py-1">Buyer</button>
-          <button onClick={() => handleNavClick('/delivery/login')} className="block w-full text-left py-1">Delivery</button>
-          <button onClick={() => handleNavClick('/seller/login')} className="block w-full text-left py-1">Seller</button>
+        {/* Login Section */}
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              setIsMobileLoginOpen(!isMobileLoginOpen);
+              setIsMobileRegisterOpen(false);
+            }}
+            className="w-full flex items-center justify-between py-3 px-4 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 rounded-lg text-white font-semibold transition-all shadow-md"
+          >
+            <span className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+              Login
+            </span>
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className={`h-5 w-5 transition-transform ${isMobileLoginOpen ? 'rotate-180' : ''}`} 
+              viewBox="0 0 20 20" 
+              fill="currentColor"
+            >
+              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <div className={`mt-2 space-y-2 ${isMobileLoginOpen ? 'block' : 'hidden'}`}>
+            <button 
+              onClick={() => handleNavClick('/buyer/login')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">👤</span>
+                <span className="font-medium">Buyer</span>
+              </span>
+            </button>
+            <button 
+              onClick={() => handleNavClick('/delivery/login')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">🚴</span>
+                <span className="font-medium">Rider</span>
+              </span>
+            </button>
+            <button 
+              onClick={() => handleNavClick('/seller/login')} 
+              className="block w-full text-left py-2.5 px-4 bg-white hover:bg-rose-50 rounded-lg text-gray-700 hover:text-rose-700 transition-colors border border-gray-200 hover:border-rose-300"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-lg">🏪</span>
+                <span className="font-medium">Seller</span>
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </nav>

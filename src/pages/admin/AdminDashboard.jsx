@@ -53,7 +53,44 @@ const AdminDashboard = () => {
   // Pagination states
   const [currentProductPage, setCurrentProductPage] = useState(0);
   const [currentOrderPage, setCurrentOrderPage] = useState(0);
+  const [currentCustomerPage, setCurrentCustomerPage] = useState(1);
+  const [currentSellerPage, setCurrentSellerPage] = useState(1);
+  const [currentRiderPage, setCurrentRiderPage] = useState(1);
+  const [currentPendingSellerPage, setCurrentPendingSellerPage] = useState(1);
+  const [currentPendingDeliveryPage, setCurrentPendingDeliveryPage] = useState(1);
   const itemsPerPage = 10;
+
+  // Backend pagination metadata
+  const [customersPagination, setCustomersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
+  const [sellersPagination, setSellersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
+  const [ridersPagination, setRidersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
+  const [pendingSellersPagination, setPendingSellersPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
+  const [pendingDeliveriesPagination, setPendingDeliveriesPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
 
   // Filter states
   const [productSearch, setProductSearch] = useState('');
@@ -88,6 +125,9 @@ const AdminDashboard = () => {
   const [selectedUserForApproval, setSelectedUserForApproval] = useState(null);
   const [approvalUserType, setApprovalUserType] = useState('');
   const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+
+  // Pagination loading states
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
 
   // Analytics states
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -129,38 +169,56 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  const loadCustomersData = useCallback(async () => {
+  const loadCustomersData = useCallback(async (page = currentCustomerPage, showLoading = false) => {
     try {
-      const customersData = await getCustomers();
+      if (showLoading) setIsPaginationLoading(true);
+      const customersData = await getCustomers(page, itemsPerPage);
       if (customersData.success) {
         setCustomers(customersData.customers);
+        if (customersData.pagination) {
+          setCustomersPagination(customersData.pagination);
+        }
       }
     } catch (error) {
       console.error('Error loading customers:', error);
+    } finally {
+      if (showLoading) setIsPaginationLoading(false);
     }
-  }, []);
+  }, [currentCustomerPage]);
 
-  const loadSellersData = useCallback(async () => {
+  const loadSellersData = useCallback(async (page = currentSellerPage, showLoading = false) => {
     try {
-      const sellersData = await getSellers();
+      if (showLoading) setIsPaginationLoading(true);
+      const sellersData = await getSellers(page, itemsPerPage);
       if (sellersData.success) {
         setSellers(sellersData.sellers);
+        if (sellersData.pagination) {
+          setSellersPagination(sellersData.pagination);
+        }
       }
     } catch (error) {
       console.error('Error loading sellers:', error);
+    } finally {
+      if (showLoading) setIsPaginationLoading(false);
     }
-  }, []);
+  }, [currentSellerPage]);
 
-  const loadRidersData = useCallback(async () => {
+  const loadRidersData = useCallback(async (page = currentRiderPage, showLoading = false) => {
     try {
-      const ridersData = await getRiders();
+      if (showLoading) setIsPaginationLoading(true);
+      const ridersData = await getRiders(page, itemsPerPage);
       if (ridersData.success) {
         setRiders(ridersData.riders);
+        if (ridersData.pagination) {
+          setRidersPagination(ridersData.pagination);
+        }
       }
     } catch (error) {
       console.error('Error loading riders:', error);
+    } finally {
+      if (showLoading) setIsPaginationLoading(false);
     }
-  }, []);
+  }, [currentRiderPage]);
 
   const [ordersPagination, setOrdersPagination] = useState({
     currentPage: 1,
@@ -277,9 +335,51 @@ const AdminDashboard = () => {
       if (approvalsData.success) {
         setPendingSellers(approvalsData.pendingSellers || []);
         setPendingDeliveries(approvalsData.pendingDeliveries || []);
+        if (approvalsData.pagination) {
+          if (approvalsData.pagination.sellers) {
+            setPendingSellersPagination(approvalsData.pagination.sellers);
+          }
+          if (approvalsData.pagination.deliveries) {
+            setPendingDeliveriesPagination(approvalsData.pagination.deliveries);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading pending approvals:', error);
+    }
+  }, []);
+
+  const loadPendingSellersPage = useCallback(async (page, showLoading = true) => {
+    try {
+      if (showLoading) setIsPaginationLoading(true);
+      const approvalsData = await getPendingApprovals(page, itemsPerPage, 'sellers');
+      if (approvalsData.success) {
+        setPendingSellers(approvalsData.pendingSellers || []);
+        if (approvalsData.pagination?.sellers) {
+          setPendingSellersPagination(approvalsData.pagination.sellers);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading pending sellers:', error);
+    } finally {
+      if (showLoading) setIsPaginationLoading(false);
+    }
+  }, []);
+
+  const loadPendingDeliveriesPage = useCallback(async (page, showLoading = true) => {
+    try {
+      if (showLoading) setIsPaginationLoading(true);
+      const approvalsData = await getPendingApprovals(page, itemsPerPage, 'deliveries');
+      if (approvalsData.success) {
+        setPendingDeliveries(approvalsData.pendingDeliveries || []);
+        if (approvalsData.pagination?.deliveries) {
+          setPendingDeliveriesPagination(approvalsData.pagination.deliveries);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading pending deliveries:', error);
+    } finally {
+      if (showLoading) setIsPaginationLoading(false);
     }
   }, []);
 
@@ -430,35 +530,35 @@ const AdminDashboard = () => {
             }
             break;
           case 'sellers':
-            const sellersData = await getSellers();
-            if (sellersData.success) {
-              setSellers(sellersData.sellers);
-            }
+            await loadSellersData(currentSellerPage);
             break;
           case 'riders':
-            const ridersData = await getRiders();
-            if (ridersData.success) {
-              setRiders(ridersData.riders);
-            }
+            await loadRidersData(currentRiderPage);
             break;
           case 'customers':
-            const customersData = await getCustomers();
-            if (customersData.success) {
-              setCustomers(customersData.customers);
-            }
+            await loadCustomersData(currentCustomerPage);
             break;
           case 'dashboard':
             // Refresh all data for dashboard
-            const [productsRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
-              getProducts(),
-              getSellers(),
-              getRiders(),
-              getCustomers()
-            ]);
-            if (productsRefresh.success) setProducts(productsRefresh.products);
-            if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
-            if (ridersRefresh.success) setRiders(ridersRefresh.riders);
-            if (customersRefresh.success) setCustomers(customersRefresh.customers);
+                            const [productsRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+                              getProducts(),
+                              getSellers(1, itemsPerPage),
+                              getRiders(1, itemsPerPage),
+                              getCustomers(1, itemsPerPage)
+                            ]);
+                            if (productsRefresh.success) setProducts(productsRefresh.products);
+                            if (sellersRefresh.success) {
+                              setSellers(sellersRefresh.sellers);
+                              if (sellersRefresh.pagination) setSellersPagination(sellersRefresh.pagination);
+                            }
+                            if (ridersRefresh.success) {
+                              setRiders(ridersRefresh.riders);
+                              if (ridersRefresh.pagination) setRidersPagination(ridersRefresh.pagination);
+                            }
+                            if (customersRefresh.success) {
+                              setCustomers(customersRefresh.customers);
+                              if (customersRefresh.pagination) setCustomersPagination(customersRefresh.pagination);
+                            }
             // Load orders separately to use the proper function
             await loadOrdersData();
             break;
@@ -962,7 +1062,7 @@ const AdminDashboard = () => {
   return (
     <div className="font-inter text-gray-800 bg-gradient-to-b from-white to-gray-50 min-h-screen">
       {/* Loading Progress Bar */}
-      <LoadingProgressBar isLoading={isLoading} />
+      <LoadingProgressBar isLoading={isLoading || isPaginationLoading} />
 
       {/* Header */}
       <DashboardNavbar
@@ -1048,16 +1148,16 @@ const AdminDashboard = () => {
                       <button
                         onClick={async () => {
                           try {
-                            const [productsRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+                            const [productsRefresh] = await Promise.all([
                               getProducts(),
-                              getSellers(),
-                              getRiders(),
-                              getCustomers()
+                              loadSellersData(1),
+                              loadRidersData(1),
+                              loadCustomersData(1)
                             ]);
                             if (productsRefresh.success) setProducts(productsRefresh.products);
-                            if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
-                            if (ridersRefresh.success) setRiders(ridersRefresh.riders);
-                            if (customersRefresh.success) setCustomers(customersRefresh.customers);
+                            setCurrentSellerPage(1);
+                            setCurrentRiderPage(1);
+                            setCurrentCustomerPage(1);
                             await loadOrdersData();
                             showToast('Dashboard refreshed!', 'success');
                           } catch (error) {
@@ -1325,10 +1425,10 @@ const AdminDashboard = () => {
                       </div>
                     </div>
 
-                    {/* Pending Sellers Section */}
+                     {/* Pending Sellers Section */}
                     {pendingSellers.length > 0 && (
                       <div>
-                        <h3 className="text-lg font-semibold mb-4">Pending Sellers</h3>
+                        <h3 className="text-lg font-semibold mb-4">Pending Sellers ({pendingSellersPagination.totalItems})</h3>
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           {pendingSellers.map(seller => (
                             <div
@@ -1371,13 +1471,46 @@ const AdminDashboard = () => {
                             </div>
                           ))}
                         </div>
+                        
+                        {/* Pagination for Pending Sellers */}
+                        {pendingSellersPagination.totalPages > 1 && (
+                          <div className="mt-6 flex items-center justify-between p-4 bg-white rounded-lg border">
+                            <div className="text-sm text-gray-600">
+                              Showing {(pendingSellersPagination.currentPage - 1) * pendingSellersPagination.itemsPerPage + 1}-{Math.min(pendingSellersPagination.currentPage * pendingSellersPagination.itemsPerPage, pendingSellersPagination.totalItems)} of {pendingSellersPagination.totalItems}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  const newPage = Math.max(1, currentPendingSellerPage - 1);
+                                  setCurrentPendingSellerPage(newPage);
+                                  await loadPendingSellersPage(newPage, true);
+                                }}
+                                disabled={currentPendingSellerPage === 1 || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                ← Previous
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const newPage = currentPendingSellerPage + 1;
+                                  setCurrentPendingSellerPage(newPage);
+                                  await loadPendingSellersPage(newPage, true);
+                                }}
+                                disabled={currentPendingSellerPage >= pendingSellersPagination.totalPages || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Pending Delivery Partners Section */}
                     {pendingDeliveries.length > 0 && (
                       <div>
-                        <h3 className="text-lg font-semibold mb-4">Pending Delivery Partners</h3>
+                        <h3 className="text-lg font-semibold mb-4">Pending Delivery Partners ({pendingDeliveriesPagination.totalItems})</h3>
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           {pendingDeliveries.map(delivery => (
                             <div
@@ -1420,6 +1553,39 @@ const AdminDashboard = () => {
                             </div>
                           ))}
                         </div>
+                        
+                        {/* Pagination for Pending Deliveries */}
+                        {pendingDeliveriesPagination.totalPages > 1 && (
+                          <div className="mt-6 flex items-center justify-between p-4 bg-white rounded-lg border">
+                            <div className="text-sm text-gray-600">
+                              Showing {(pendingDeliveriesPagination.currentPage - 1) * pendingDeliveriesPagination.itemsPerPage + 1}-{Math.min(pendingDeliveriesPagination.currentPage * pendingDeliveriesPagination.itemsPerPage, pendingDeliveriesPagination.totalItems)} of {pendingDeliveriesPagination.totalItems}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  const newPage = Math.max(1, currentPendingDeliveryPage - 1);
+                                  setCurrentPendingDeliveryPage(newPage);
+                                  await loadPendingDeliveriesPage(newPage, true);
+                                }}
+                                disabled={currentPendingDeliveryPage === 1 || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                ← Previous
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const newPage = currentPendingDeliveryPage + 1;
+                                  setCurrentPendingDeliveryPage(newPage);
+                                  await loadPendingDeliveriesPage(newPage, true);
+                                }}
+                                disabled={currentPendingDeliveryPage >= pendingDeliveriesPagination.totalPages || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1891,25 +2057,15 @@ const AdminDashboard = () => {
                         <button
                           onClick={async () => {
                             try {
-                              let data;
                               if (currentPage === 'sellers') {
-                                data = await getSellers();
-                                if (data.success) {
-                                  setSellers(data.sellers);
-                                  showToast('Sellers refreshed!', 'success');
-                                }
+                                await loadSellersData(currentSellerPage);
+                                showToast('Sellers refreshed!', 'success');
                               } else if (currentPage === 'riders') {
-                                data = await getRiders();
-                                if (data.success) {
-                                  setRiders(data.riders);
-                                  showToast('Riders refreshed!', 'success');
-                                }
+                                await loadRidersData(currentRiderPage);
+                                showToast('Riders refreshed!', 'success');
                               } else {
-                                data = await getCustomers();
-                                if (data.success) {
-                                  setCustomers(data.customers);
-                                  showToast('Customers refreshed!', 'success');
-                                }
+                                await loadCustomersData(currentCustomerPage);
+                                showToast('Customers refreshed!', 'success');
                               }
                             } catch (error) {
                               console.error('Refresh error:', error);
@@ -1964,23 +2120,25 @@ const AdminDashboard = () => {
                     </div>
 
                     {/* User Cards Grid */}
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {(currentPage === 'sellers' ? getFilteredSellers() :
-                        currentPage === 'riders' ? getFilteredRiders() :
-                          getFilteredCustomers()).length === 0 ? (
-                        <div className="col-span-full text-center py-12 text-gray-500">
-                          No {currentPage} found. {
-                            (currentPage === 'sellers' && sellerSearch) ||
-                              (currentPage === 'riders' && (riderSearch || vehicleTypeFilter)) ||
-                              (currentPage === 'customers' && customerSearch)
-                              ? 'Try adjusting your search filters.'
-                              : `Add your first ${currentPage.slice(0, -1)} to get started.`
-                          }
-                        </div>
-                      ) : (
-                        (currentPage === 'sellers' ? getFilteredSellers() :
+                    <div className="space-y-4">
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {(currentPage === 'sellers' ? getFilteredSellers() :
                           currentPage === 'riders' ? getFilteredRiders() :
-                            getFilteredCustomers()).map(user => (
+                            getFilteredCustomers()).length === 0 ? (
+                          <div className="col-span-full text-center py-12 text-gray-500">
+                            No {currentPage} found. {
+                              (currentPage === 'sellers' && sellerSearch) ||
+                                (currentPage === 'riders' && (riderSearch || vehicleTypeFilter)) ||
+                                (currentPage === 'customers' && customerSearch)
+                                ? 'Try adjusting your search filters.'
+                                : `Add your first ${currentPage.slice(0, -1)} to get started.`
+                            }
+                          </div>
+                        ) : (
+                          (currentPage === 'sellers' ? getFilteredSellers() :
+                            currentPage === 'riders' ? getFilteredRiders() :
+                              getFilteredCustomers())
+                            .map(user => (
                               <div key={user.id} className="card p-4 hover-animate relative">
                                 {/* Account Status Indicator for all user types */}
                                 <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
@@ -2059,20 +2217,11 @@ const AdminDashboard = () => {
                                             // Refresh the data from server to ensure consistency
                                             let refreshData;
                                             if (currentPage === 'riders') {
-                                              refreshData = await getRiders();
-                                              if (refreshData.success) {
-                                                setRiders(refreshData.riders);
-                                              }
+                                              await loadRidersData(currentRiderPage);
                                             } else if (currentPage === 'sellers') {
-                                              refreshData = await getSellers();
-                                              if (refreshData.success) {
-                                                setSellers(refreshData.sellers);
-                                              }
+                                              await loadSellersData(currentSellerPage);
                                             } else if (currentPage === 'customers') {
-                                              refreshData = await getCustomers();
-                                              if (refreshData.success) {
-                                                setCustomers(refreshData.customers);
-                                              }
+                                              await loadCustomersData(currentCustomerPage);
                                             }
 
                                             const userTypeName = currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1);
@@ -2111,7 +2260,66 @@ const AdminDashboard = () => {
                                 </div>
                               </div>
                             ))
-                      )}
+                        )}
+                      </div>
+
+                      {/* Pagination for Users */}
+                      {(() => {
+                        const pagination = currentPage === 'sellers' ? sellersPagination :
+                          currentPage === 'riders' ? ridersPagination :
+                            customersPagination;
+                        const currentPageNum = currentPage === 'sellers' ? currentSellerPage :
+                          currentPage === 'riders' ? currentRiderPage :
+                            currentCustomerPage;
+
+                        return pagination.totalPages > 1 && (
+                          <div className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                            <div className="text-sm text-gray-600">
+                              Showing {(pagination.currentPage - 1) * pagination.itemsPerPage + 1}-{Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} of {pagination.totalItems}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  const newPage = Math.max(1, currentPageNum - 1);
+                                  if (currentPage === 'sellers') {
+                                    setCurrentSellerPage(newPage);
+                                    await loadSellersData(newPage, true);
+                                  } else if (currentPage === 'riders') {
+                                    setCurrentRiderPage(newPage);
+                                    await loadRidersData(newPage, true);
+                                  } else {
+                                    setCurrentCustomerPage(newPage);
+                                    await loadCustomersData(newPage, true);
+                                  }
+                                }}
+                                disabled={currentPageNum === 1 || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                ← Previous
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const newPage = currentPageNum + 1;
+                                  if (currentPage === 'sellers') {
+                                    setCurrentSellerPage(newPage);
+                                    await loadSellersData(newPage, true);
+                                  } else if (currentPage === 'riders') {
+                                    setCurrentRiderPage(newPage);
+                                    await loadRidersData(newPage, true);
+                                  } else {
+                                    setCurrentCustomerPage(newPage);
+                                    await loadCustomersData(newPage, true);
+                                  }
+                                }}
+                                disabled={currentPageNum >= pagination.totalPages || isPaginationLoading}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

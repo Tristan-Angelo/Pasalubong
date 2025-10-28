@@ -214,20 +214,20 @@ export const changeAdminPassword = async (passwordData) => {
 
 // ============= ADMIN DATA API =============
 
-export const getCustomers = async () => {
-  return apiCall('/admin/customers', {
+export const getCustomers = async (page = 1, limit = 10) => {
+  return apiCall(`/admin/customers?page=${page}&limit=${limit}`, {
     method: 'GET',
   });
 };
 
-export const getSellers = async () => {
-  return apiCall('/admin/sellers', {
+export const getSellers = async (page = 1, limit = 10) => {
+  return apiCall(`/admin/sellers?page=${page}&limit=${limit}`, {
     method: 'GET',
   });
 };
 
-export const getRiders = async () => {
-  return apiCall('/admin/riders', {
+export const getRiders = async (page = 1, limit = 10) => {
+  return apiCall(`/admin/riders?page=${page}&limit=${limit}`, {
     method: 'GET',
   });
 };
@@ -997,8 +997,10 @@ export const getDeliveryApprovalStatus = async () => {
 // ============= ADMIN APPROVAL API =============
 
 // Get Pending Approvals
-export const getPendingApprovals = async () => {
-  return adminApiCall('/admin/pending-approvals', { method: 'GET' });
+export const getPendingApprovals = async (page = 1, limit = 10, type = null) => {
+  const params = new URLSearchParams({ page, limit });
+  if (type) params.append('type', type);
+  return adminApiCall(`/admin/pending-approvals?${params.toString()}`, { method: 'GET' });
 };
 
 // Approve Seller
