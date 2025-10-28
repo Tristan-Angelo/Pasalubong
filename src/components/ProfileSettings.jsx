@@ -373,7 +373,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Barangay</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Barangay <span className="text-gray-500 font-normal">(optional)</span></label>
           <input
             type="text"
             name="barangay"
@@ -475,7 +475,7 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Barangay</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Barangay <span className="text-gray-500 font-normal">(optional)</span></label>
           <input
             type="text"
             name="barangay"

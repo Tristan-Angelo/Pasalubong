@@ -98,7 +98,6 @@ const DeliveryRegister = () => {
       region: '',
       province: '',
       city: '',
-      barangay: '',
       password: '',
       confirmPassword: ''
     });
@@ -402,7 +401,7 @@ const DeliveryRegister = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold mb-1">Barangay</label>
+                          <label className="block text-sm font-semibold mb-1">Barangay <span className="text-gray-500 font-normal">(optional)</span></label>
                           <input
                             type="text"
                             value={formData.barangay}

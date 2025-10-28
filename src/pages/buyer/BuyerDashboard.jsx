@@ -2600,7 +2600,7 @@ const BuyerDashboard = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Barangay</label>
+                    <label className="block text-sm font-medium mb-2">Barangay <span className="text-gray-500 font-normal">(optional)</span></label>
                     <input
                       className="w-full px-3 py-2 rounded-xl border bg-gray-50"
                       placeholder="Auto-filled from search"

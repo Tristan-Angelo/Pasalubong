@@ -34,7 +34,7 @@ const buyerSchema = new mongoose.Schema({
   },
   barangay: {
     type: String,
-    required: [true, 'Barangay is required']
+    required: false
   },
   password: {
     type: String,
