@@ -178,7 +178,6 @@ const AdminDashboard = () => {
 
       let allOrders = [];
 
-      // Process old orders from Order model
       if (ordersData.success) {
         const oldOrders = ordersData.orders.map(order => ({
           id: order.id,
@@ -203,33 +202,31 @@ const AdminDashboard = () => {
         setOrdersPagination(buyerOrdersData.pagination);
       }
 
-      // Process buyer orders from BuyerOrder model
-      if (buyerOrdersData.success && buyerOrdersData.orders) {
+      // Merge buyer orders with old orders for comprehensive view
+      if (buyerOrdersData.success) {
         const buyerOrders = buyerOrdersData.orders.map(order => ({
           id: order.id,
           orderNumber: order.orderNumber,
-          customer: order.customerName || 'Unknown',
-          amount: order.total || 0,
+          customer: order.customerName,
+          amount: order.total,
           status: order.status,
-          date: order.date || order.createdAt,
-          deliveryPerson: order.deliveryPerson || null,
-          deliveryStatus: order.deliveryStatus || null,
-          statusHistory: order.statusHistory || [],
-          proofOfDelivery: order.proofOfDelivery || null,
-          proofOfDeliveryImages: order.proofOfDeliveryImages || [],
-          deliveredAt: order.deliveredAt || null,
-          items: order.items || []
+          date: order.date,
+          deliveryPerson: order.deliveryPerson,
+          deliveryStatus: order.deliveryStatus,
+          statusHistory: order.statusHistory,
+          proofOfDelivery: order.proofOfDelivery,
+          proofOfDeliveryImages: order.proofOfDeliveryImages,
+          deliveredAt: order.deliveredAt,
+          items: order.items
         }));
-        // Put buyer orders first (they're more recent)
         allOrders = [...buyerOrders, ...allOrders];
       }
 
-      console.log('📦 Admin loaded orders:', allOrders.length, 'orders');
       setOrders(allOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
     }
-  }, [ordersPagination.currentPage, ordersPagination.ordersPerPage]);
+  }, []);
 
   const loadDeliveryPersonsData = useCallback(async () => {
     try {
@@ -1196,7 +1193,7 @@ const AdminDashboard = () => {
                               ₱{Object.values(productSalesMap).reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
                             </p>
                           </div>
-                           <div className="card p-4 text-center">
+                          <div className="card p-4 text-center">
                             <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
                             <p className="text-2xl font-bold text-purple-600">
                               ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || 0), 0) / orders.length).toFixed(2) : '0'}
@@ -2000,8 +1997,8 @@ const AdminDashboard = () => {
                                 {/* Account Status Indicator for all user types */}
                                 <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
                                   <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${(user.isActive !== undefined ? user.isActive : true)
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-red-100 text-red-800'
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
                                     }`}>
                                     <span className={`w-2 h-2 rounded-full ${(user.isActive !== undefined ? user.isActive : true) ? 'bg-green-500' : 'bg-red-500'
                                       }`}></span>
@@ -2010,8 +2007,8 @@ const AdminDashboard = () => {
                                   {/* Availability Status for Riders only */}
                                   {currentPage === 'riders' && (
                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${(user.isAvailable !== undefined ? user.isAvailable : true)
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-gray-100 text-gray-800'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : 'bg-gray-100 text-gray-800'
                                       }`}>
                                       <span className={`w-2 h-2 rounded-full ${(user.isAvailable !== undefined ? user.isAvailable : true) ? 'bg-blue-500' : 'bg-gray-500'
                                         }`}></span>
@@ -2022,19 +2019,19 @@ const AdminDashboard = () => {
 
                                 <div className="flex items-center gap-3 mb-3">
                                   <div className={`w-12 h-12 rounded-full overflow-hidden flex items-center justify-center border-2 ${currentPage === 'sellers'
-                                      ? 'bg-rose-50 border-rose-500'
-                                      : currentPage === 'riders'
-                                        ? 'bg-blue-50 border-blue-500'
-                                        : 'bg-purple-50 border-purple-500'
+                                    ? 'bg-rose-50 border-rose-500'
+                                    : currentPage === 'riders'
+                                      ? 'bg-blue-50 border-blue-500'
+                                      : 'bg-purple-50 border-purple-500'
                                     }`}>
                                     {user.image ? (
                                       <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
                                     ) : (
                                       <span className={`text-2xl font-semibold ${currentPage === 'sellers'
-                                          ? 'text-rose-600'
-                                          : currentPage === 'riders'
-                                            ? 'text-blue-600'
-                                            : 'text-purple-600'
+                                        ? 'text-rose-600'
+                                        : currentPage === 'riders'
+                                          ? 'text-blue-600'
+                                          : 'text-purple-600'
                                         }`}>
                                         {currentPage === 'sellers' ? '🏪' : currentPage === 'riders' ? '🚚' : '👤'}
                                       </span>
@@ -2099,8 +2096,8 @@ const AdminDashboard = () => {
                                         }
                                       }}
                                       className={`flex-1 py-2 px-3 rounded-lg text-sm ${(user.isActive !== undefined ? user.isActive : true)
-                                          ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-                                          : 'bg-green-50 text-green-700 hover:bg-green-100'
+                                        ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                                        : 'bg-green-50 text-green-700 hover:bg-green-100'
                                         }`}
                                     >
                                       {(user.isActive !== undefined ? user.isActive : true) ? 'Deactivate' : 'Activate'}
@@ -2478,8 +2475,8 @@ const AdminDashboard = () => {
                           }
                         }}
                         className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${(editedUserData.isActive !== undefined ? editedUserData.isActive : true)
-                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                            : 'bg-red-100 text-red-800 hover:bg-red-200'
+                          ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                          : 'bg-red-100 text-red-800 hover:bg-red-200'
                           }`}
                       >
                         <span className={`w-2 h-2 rounded-full ${(editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'bg-green-500' : 'bg-red-500'
@@ -2566,6 +2563,81 @@ const AdminDashboard = () => {
                         readOnly
                         className="w-full px-3 py-2 rounded-xl border bg-gray-50 cursor-not-allowed"
                       />
+                    </div>
+                  )}
+
+                  {/* Face Registration Status - For Customers Only */}
+                  {currentUserType === 'customer' && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Face Registration</label>
+                      <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                        {editedUserData.isFaceRegistered && editedUserData.faceImage ? (
+                          <>
+                            <div className="flex-shrink-0">
+                              <div className="relative w-32 h-32 rounded-xl overflow-hidden border-2 border-green-500 shadow-lg">
+                                <img
+                                  src={editedUserData.faceImage}
+                                  alt="Registered Face"
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-white rounded-full"></span>
+                                  Verified
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-2xl">✅</span>
+                                <h4 className="font-semibold text-gray-900">Face Registered</h4>
+                              </div>
+                              <p className="text-sm text-gray-600 mb-2">
+                                This customer has registered their face for secure verification.
+                              </p>
+                              {editedUserData.faceRegisteredAt && (
+                                <p className="text-xs text-gray-500">
+                                  Registered on: {new Date(editedUserData.faceRegisteredAt).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        ) : editedUserData.isFaceRegistered ? (
+                          <div className="flex items-start gap-3">
+                            <span className="text-2xl">✅</span>
+                            <div>
+                              <h4 className="font-semibold text-gray-900 mb-1">Face Registered</h4>
+                              <p className="text-sm text-gray-600">
+                                Face registered but image not available (registered before image capture feature).
+                              </p>
+                              {editedUserData.faceRegisteredAt && (
+                                <p className="text-xs text-gray-500 mt-2">
+                                  Registered on: {new Date(editedUserData.faceRegisteredAt).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-3">
+                            <span className="text-2xl">⚠️</span>
+                            <div>
+                              <h4 className="font-semibold text-gray-900 mb-1">Face Not Registered</h4>
+                              <p className="text-sm text-gray-600">
+                                This customer has not registered their face yet. They will be prompted to register when placing orders.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 

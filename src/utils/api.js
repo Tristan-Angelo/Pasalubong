@@ -471,10 +471,10 @@ export const changeBuyerPassword = async (passwordData) => {
 };
 
 // Face Recognition
-export const registerBuyerFace = async (faceDescriptor) => {
+export const registerBuyerFace = async (faceDescriptor, faceImage) => {
   return buyerApiCall('/buyer/face/register', {
     method: 'POST',
-    body: JSON.stringify({ faceDescriptor })
+    body: JSON.stringify({ faceDescriptor, faceImage })
   });
 };
 

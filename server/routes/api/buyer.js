@@ -1266,7 +1266,7 @@ router.put('/orders/:id/cancel', async (req, res) => {
 // Register face descriptor
 router.post('/face/register', async (req, res) => {
   try {
-    const { faceDescriptor } = req.body;
+    const { faceDescriptor, faceImage } = req.body;
 
     if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length !== 128) {
       return res.status(400).json({
@@ -1275,14 +1275,21 @@ router.post('/face/register', async (req, res) => {
       });
     }
 
-    // Update buyer with face descriptor
+    // Update buyer with face descriptor and image
+    const updateData = {
+      faceDescriptor,
+      isFaceRegistered: true,
+      faceRegisteredAt: new Date()
+    };
+
+    // Add face image if provided
+    if (faceImage) {
+      updateData.faceImage = faceImage;
+    }
+
     const buyer = await Buyer.findByIdAndUpdate(
       req.buyerId,
-      {
-        faceDescriptor,
-        isFaceRegistered: true,
-        faceRegisteredAt: new Date()
-      },
+      updateData,
       { new: true }
     ).select('-password -verificationToken -resetPasswordToken -resetPasswordCode');
 

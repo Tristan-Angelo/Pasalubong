@@ -7,9 +7,9 @@ const BuyerFaceSetup = () => {
   const navigate = useNavigate();
   const [error, setError] = useState('');
 
-  const handleFaceRegistrationSuccess = async (faceDescriptor) => {
+  const handleFaceRegistrationSuccess = async (faceDescriptor, faceImage) => {
     try {
-      await registerBuyerFace(faceDescriptor);
+      await registerBuyerFace(faceDescriptor, faceImage);
       
       // Update local storage to mark face as registered
       const buyerUser = JSON.parse(

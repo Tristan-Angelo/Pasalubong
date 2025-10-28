@@ -111,8 +111,16 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
 
       setMessage('Face captured! Registering...');
       
-      // Call parent success handler with descriptor
-      await onSuccess(result.descriptor);
+      // Capture the face image as base64
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0);
+      const faceImage = canvas.toDataURL('image/jpeg', 0.8);
+      
+      // Call parent success handler with descriptor and image
+      await onSuccess(result.descriptor, faceImage);
       
       cleanup();
     } catch (err) {

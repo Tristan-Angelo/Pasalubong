@@ -78,6 +78,10 @@ const buyerSchema = new mongoose.Schema({
     type: [Number],
     default: null
   },
+  faceImage: {
+    type: String,
+    default: null
+  },
   isFaceRegistered: {
     type: Boolean,
     default: false
