@@ -1016,6 +1016,7 @@ router.get('/orders/:id', async (req, res) => {
 // Place new order
 router.post('/orders', async (req, res) => {
   try {
+    console.log('📥 Received order request body:', JSON.stringify(req.body, null, 2));
     const { items, addressId, paymentMethod, specialInstructions, faceVerification, proofOfPaymentsBySeller } = req.body;
 
     if (!items || items.length === 0) {
@@ -1211,9 +1212,13 @@ router.post('/orders', async (req, res) => {
     });
   } catch (error) {
     console.error('Place order error:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
     res.status(500).json({
       error: 'Failed to place order',
-      message: 'An error occurred while placing order'
+      message: error.message || 'An error occurred while placing order',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

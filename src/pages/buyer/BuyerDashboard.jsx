@@ -496,7 +496,8 @@ const BuyerDashboard = () => {
         setShowCheckoutModal(false);
         showToast('Order placed successfully!', 'success');
         // Reload both cart and orders to ensure UI is in sync
-        await Promise.all([loadCartData(), loadOrdersData()]);
+        // Pass page 1 explicitly to load the first page with the new order
+        await Promise.all([loadCartData(), loadOrdersData(1)]);
         setActivePage('orders');
       }
     } catch (error) {

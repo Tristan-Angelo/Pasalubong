@@ -123,7 +123,9 @@ const buyerOrderSchema = new mongoose.Schema({
 buyerOrderSchema.index({ buyerId: 1, createdAt: -1 });
 buyerOrderSchema.index({ deliveryPersonId: 1, deliveryStatus: 1 });
 buyerOrderSchema.index({ 'items.seller': 1, createdAt: -1 });
-buyerOrderSchema.index({ 'items.seller': 1, 'sellerStatus.seller': 1 });
+// Removed compound index on parallel arrays (items.seller and sellerStatus.seller)
+// MongoDB doesn't support indexing two array fields together
+buyerOrderSchema.index({ 'sellerStatus.seller': 1 });
 buyerOrderSchema.index({ status: 1 });
 buyerOrderSchema.index({ createdAt: -1 });
 

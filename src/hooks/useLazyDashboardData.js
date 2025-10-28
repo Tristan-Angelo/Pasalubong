@@ -110,11 +110,17 @@ const useLazyDashboardData = (activePage, dataLoaders) => {
   // Force reload a section
   const reloadSection = useCallback(async (section) => {
     console.log(`🔄 Force reloading section: ${section}`);
+    
+    // Update both state and ref to mark section as not loaded
     setLoadedSections(prev => {
       const newSet = new Set(prev);
       newSet.delete(section);
+      loadedSectionsRef.current = newSet; // Update ref immediately
+      console.log(`📝 Removed ${section} from loadedSections:`, Array.from(newSet));
       return newSet;
     });
+    
+    // Now reload the section data
     await loadSectionData(section);
   }, [loadSectionData]);
 
