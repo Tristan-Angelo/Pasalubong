@@ -22,22 +22,36 @@ async function fixIndexes() {
     const indexes = await collection.indexes();
     console.log('Current indexes:', indexes.map(i => i.name));
 
-    // Drop the problematic index if it exists
-    const problematicIndexName = 'items.seller_1_sellerStatus.seller_1';
-    const indexExists = indexes.some(i => i.name === problematicIndexName);
+    // Drop all problematic indexes that involve items.seller
+    const problematicIndexes = [
+      'items.seller_1_sellerStatus.seller_1',
+      'items.seller_1_createdAt_-1',
+      'items.seller_1'
+    ];
 
-    if (indexExists) {
-      console.log(`🗑️  Dropping problematic index: ${problematicIndexName}`);
-      await collection.dropIndex(problematicIndexName);
-      console.log('✅ Problematic index dropped successfully');
-    } else {
-      console.log('ℹ️  Problematic index not found, nothing to drop');
+    for (const indexName of problematicIndexes) {
+      const indexExists = indexes.some(i => i.name === indexName);
+      if (indexExists) {
+        console.log(`🗑️  Dropping problematic index: ${indexName}`);
+        try {
+          await collection.dropIndex(indexName);
+          console.log(`✅ Index ${indexName} dropped successfully`);
+        } catch (error) {
+          console.log(`⚠️  Could not drop ${indexName}: ${error.message}`);
+        }
+      } else {
+        console.log(`ℹ️  Index ${indexName} not found, skipping`);
+      }
     }
 
     // Create the new index if it doesn't exist
-    console.log('🔨 Creating new index on sellerStatus.seller...');
-    await collection.createIndex({ 'sellerStatus.seller': 1 });
-    console.log('✅ New index created successfully');
+    console.log('🔨 Creating index on sellerStatus.seller...');
+    try {
+      await collection.createIndex({ 'sellerStatus.seller': 1 });
+      console.log('✅ Index on sellerStatus.seller created successfully');
+    } catch (error) {
+      console.log(`ℹ️  Index on sellerStatus.seller already exists or error: ${error.message}`);
+    }
 
     console.log('📋 Final indexes:');
     const finalIndexes = await collection.indexes();

@@ -122,8 +122,7 @@ const buyerOrderSchema = new mongoose.Schema({
 // Indexes for efficient queries
 buyerOrderSchema.index({ buyerId: 1, createdAt: -1 });
 buyerOrderSchema.index({ deliveryPersonId: 1, deliveryStatus: 1 });
-buyerOrderSchema.index({ 'items.seller': 1, createdAt: -1 });
-// Removed compound index on parallel arrays (items.seller and sellerStatus.seller)
+// Removed index on items.seller to avoid parallel array indexing issue with sellerStatus
 // MongoDB doesn't support indexing two array fields together
 buyerOrderSchema.index({ 'sellerStatus.seller': 1 });
 buyerOrderSchema.index({ status: 1 });
