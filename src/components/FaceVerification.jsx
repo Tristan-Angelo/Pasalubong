@@ -15,6 +15,7 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const detectionIntervalRef = useRef(null);
+  const isDetectingRef = useRef(false);
 
   useEffect(() => {
     initializeCamera();
@@ -63,22 +64,24 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
     if (detectionIntervalRef.current) return;
 
     detectionIntervalRef.current = setInterval(async () => {
-      if (videoRef.current && canvasRef.current && videoRef.current.readyState === 4) {
+      if (videoRef.current && canvasRef.current && videoRef.current.readyState === 4 && !isVerifying && attempts < maxAttempts && !isDetectingRef.current) {
+        isDetectingRef.current = true;
         const result = await detectFaceAndGetDescriptor(videoRef.current);
         
         if (result.success && result.detection) {
           drawDetection(canvasRef.current, { detection: result.detection }, 'Face Detected');
-          setMessage('Face detected! Click "Verify Face" to continue.');
           setFaceDetected(true);
           setError('');
+          setMessage('Face detected! Click "Verify Now" to proceed');
         } else {
           const ctx = canvasRef.current.getContext('2d');
           ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
           setMessage('Position your face in the frame');
           setFaceDetected(false);
         }
+        isDetectingRef.current = false;
       }
-    }, 100);
+    }, 500);
   };
 
   const stopDetection = () => {
@@ -93,6 +96,7 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
+    isDetectingRef.current = false;
   };
 
   const handleVerify = async () => {
@@ -311,7 +315,7 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
                   { icon: '💡', text: 'Ensure good lighting on your face' },
                   { icon: '👀', text: 'Look directly at the camera' },
                   { icon: '😊', text: 'Use the same appearance as registration' },
-                  { icon: '✅', text: 'Wait for green "Face Detected" indicator' }
+                  { icon: '🔘', text: 'Click "Verify Now" when ready' }
                 ].map((item, idx) => (
                   <li key={idx} className="flex items-start gap-3 text-sm text-gray-700">
                     <span className="text-lg flex-shrink-0">{item.icon}</span>
@@ -325,9 +329,9 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
             <div className="flex gap-3">
               <button
                 onClick={handleVerify}
-                disabled={isLoading || isVerifying || !modelsReady || attempts >= maxAttempts}
+                disabled={isLoading || isVerifying || !modelsReady || attempts >= maxAttempts || !faceDetected}
                 className={`flex-1 py-4 px-6 rounded-xl font-bold text-base transition-all duration-300 transform ${
-                  isLoading || isVerifying || !modelsReady || attempts >= maxAttempts
+                  isLoading || isVerifying || !modelsReady || attempts >= maxAttempts || !faceDetected
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-rose-500 to-pink-600 text-white hover:from-rose-600 hover:to-pink-700 shadow-lg shadow-rose-500/30 hover:shadow-xl hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98]'
                 }`}
@@ -341,7 +345,7 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
                   ) : (
                     <>
                       <span>🔍</span>
-                      <span>Verify Face</span>
+                      <span>Verify Now</span>
                     </>
                   )}
                 </div>
@@ -368,7 +372,7 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }

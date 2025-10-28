@@ -460,7 +460,10 @@ router.get('/customers', async (req, res) => {
       isEmailVerified: customer.isEmailVerified,
       isActive: customer.isActive,
       createdAt: customer.createdAt,
-      image: customer.photo || null // Use actual photo if available, null otherwise
+      image: customer.photo || null, // Use actual photo if available, null otherwise
+      faceImage: customer.faceImage || null,
+      isFaceRegistered: customer.isFaceRegistered || false,
+      faceRegisteredAt: customer.faceRegisteredAt || null
     }));
 
     res.json({

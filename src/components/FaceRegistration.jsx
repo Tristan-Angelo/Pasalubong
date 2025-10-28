@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { loadFaceApiModels, detectFaceAndGetDescriptor, drawDetection } from '../utils/faceApi';
 
-const FaceRegistration = ({ onSuccess, onSkip }) => {
+const FaceRegistration = ({ onSuccess }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState('');
@@ -13,6 +13,7 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const detectionIntervalRef = useRef(null);
+  const isDetectingRef = useRef(false);
 
   useEffect(() => {
     initializeCamera();
@@ -61,22 +62,24 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
     if (detectionIntervalRef.current) return;
 
     detectionIntervalRef.current = setInterval(async () => {
-      if (videoRef.current && canvasRef.current && videoRef.current.readyState === 4) {
+      if (videoRef.current && canvasRef.current && videoRef.current.readyState === 4 && !isCapturing && !isDetectingRef.current) {
+        isDetectingRef.current = true;
         const result = await detectFaceAndGetDescriptor(videoRef.current);
         
         if (result.success && result.detection) {
           drawDetection(canvasRef.current, { detection: result.detection }, 'Face Detected');
-          setMessage('Face detected! Click "Capture Face" to register.');
           setFaceDetected(true);
           setError('');
+          setMessage('Face detected! Click "Capture Now" to proceed');
         } else {
           const ctx = canvasRef.current.getContext('2d');
           ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
           setMessage('Position your face in the frame');
           setFaceDetected(false);
         }
+        isDetectingRef.current = false;
       }
-    }, 100);
+    }, 500);
   };
 
   const stopDetection = () => {
@@ -91,6 +94,7 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
+    isDetectingRef.current = false;
   };
 
   const handleCapture = async () => {
@@ -130,10 +134,6 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
     }
   };
 
-  const handleSkip = () => {
-    cleanup();
-    onSkip();
-  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
@@ -154,16 +154,9 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">Register Your Face</h2>
-                  <p className="text-rose-100 text-sm">Secure your account with face recognition</p>
+                  <p className="text-rose-100 text-sm">Required for secure account verification</p>
                 </div>
               </div>
-              <button
-                onClick={handleSkip}
-                disabled={isCapturing}
-                className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span className="text-xl">✕</span>
-              </button>
             </div>
           </div>
         </div>
@@ -288,7 +281,7 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
                   { icon: '💡', text: 'Ensure good lighting on your face' },
                   { icon: '👀', text: 'Look directly at the camera' },
                   { icon: '😊', text: 'Remove glasses or masks if possible' },
-                  { icon: '✅', text: 'Wait for green "Face Detected" indicator' }
+                  { icon: '🔘', text: 'Click "Capture Now" when ready' }
                 ].map((item, idx) => (
                   <li key={idx} className="flex items-start gap-3 text-sm text-gray-700">
                     <span className="text-lg flex-shrink-0">{item.icon}</span>
@@ -298,13 +291,13 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
               </ul>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
+            {/* Action Button */}
+            <div>
               <button
                 onClick={handleCapture}
-                disabled={isLoading || isCapturing || !modelsReady}
-                className={`flex-1 py-4 px-6 rounded-xl font-bold text-base transition-all duration-300 transform ${
-                  isLoading || isCapturing || !modelsReady
+                disabled={isLoading || isCapturing || !modelsReady || !faceDetected}
+                className={`w-full py-4 px-6 rounded-xl font-bold text-base transition-all duration-300 transform ${
+                  isLoading || isCapturing || !modelsReady || !faceDetected
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-rose-500 to-pink-600 text-white hover:from-rose-600 hover:to-pink-700 shadow-lg shadow-rose-500/30 hover:shadow-xl hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98]'
                 }`}
@@ -318,18 +311,10 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
                   ) : (
                     <>
                       <span>📸</span>
-                      <span>Capture Face</span>
+                      <span>Capture Now</span>
                     </>
                   )}
                 </div>
-              </button>
-              
-              <button
-                onClick={handleSkip}
-                disabled={isCapturing}
-                className="px-6 py-4 rounded-xl font-bold text-base bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Skip for Now
               </button>
             </div>
 
@@ -337,15 +322,15 @@ const FaceRegistration = ({ onSuccess, onSkip }) => {
             <div className="flex items-start gap-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
               <span className="text-xl flex-shrink-0">🔐</span>
               <p className="text-xs text-green-800 leading-relaxed">
-                <strong className="font-semibold">Privacy Protected:</strong> Your face data is encrypted and stored securely. 
-                We never store actual images, only mathematical representations.
+                <strong className="font-semibold">Required Step:</strong> Face registration is mandatory for account security. 
+                Your face data is encrypted and stored securely.
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }

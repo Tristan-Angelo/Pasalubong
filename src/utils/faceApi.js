@@ -45,22 +45,25 @@ export const detectFaceAndGetDescriptor = async (videoElement) => {
   }
 };
 
-export const drawDetection = (canvas, detection, label = '') => {
+export const drawDetection = (canvas, detectionResult, label = '') => {
   const displaySize = { width: canvas.width, height: canvas.height };
   faceapi.matchDimensions(canvas, displaySize);
 
-  const resizedDetection = faceapi.resizeResults(detection, displaySize);
-  
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  faceapi.draw.drawDetections(canvas, resizedDetection);
-  faceapi.draw.drawFaceLandmarks(canvas, resizedDetection);
+  // Handle the detection object properly
+  if (detectionResult && detectionResult.detection) {
+    const resizedDetection = faceapi.resizeResults(detectionResult.detection, displaySize);
+    
+    // Draw only the detection box
+    faceapi.draw.drawDetections(canvas, resizedDetection);
 
-  if (label) {
-    const box = resizedDetection.detection.box;
-    const drawBox = new faceapi.draw.DrawBox(box, { label });
-    drawBox.draw(canvas);
+    if (label) {
+      const box = resizedDetection.box;
+      const drawBox = new faceapi.draw.DrawBox(box, { label });
+      drawBox.draw(canvas);
+    }
   }
 };
 
