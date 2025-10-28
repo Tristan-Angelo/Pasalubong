@@ -224,8 +224,11 @@ const DeliveryDashboard = () => {
     
     if (files.length === 0) return;
     
-    if (files.length > 2) {
-      showToast('Please select only 2 images', 'error');
+    const currentImages = proofOfDeliveryImages[deliveryId] || [];
+    const totalImages = currentImages.length + files.length;
+    
+    if (totalImages > 2) {
+      showToast('Maximum 2 images allowed. Please clear existing photos first or select fewer images.', 'error');
       return;
     }
 
@@ -237,7 +240,7 @@ const DeliveryDashboard = () => {
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        showToast('Each image size should be less than 5MB', 'error');
+        showToast('Each image size must be less than 5MB', 'error');
         return;
       }
     }
@@ -254,11 +257,11 @@ const DeliveryDashboard = () => {
     Promise.all(imagePromises).then(results => {
       setProofOfDeliveryImagePreviews(prev => ({
         ...prev,
-        [deliveryId]: results
+        [deliveryId]: [...(prev[deliveryId] || []), ...results]
       }));
       setProofOfDeliveryImages(prev => ({
         ...prev,
-        [deliveryId]: results
+        [deliveryId]: [...(prev[deliveryId] || []), ...results]
       }));
     });
   };
@@ -1143,6 +1146,29 @@ const DeliveryDashboard = () => {
                                         <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-2 py-1 rounded">
                                           Photo {index + 1}
                                         </div>
+                                        <button
+                                          onClick={() => {
+                                            setProofOfDeliveryImagePreviews(prev => {
+                                              const newPreviews = { ...prev };
+                                              newPreviews[selectedDeliveryForProof.id] = newPreviews[selectedDeliveryForProof.id].filter((_, i) => i !== index);
+                                              if (newPreviews[selectedDeliveryForProof.id].length === 0) {
+                                                delete newPreviews[selectedDeliveryForProof.id];
+                                              }
+                                              return newPreviews;
+                                            });
+                                            setProofOfDeliveryImages(prev => {
+                                              const newImages = { ...prev };
+                                              newImages[selectedDeliveryForProof.id] = newImages[selectedDeliveryForProof.id].filter((_, i) => i !== index);
+                                              if (newImages[selectedDeliveryForProof.id].length === 0) {
+                                                delete newImages[selectedDeliveryForProof.id];
+                                              }
+                                              return newImages;
+                                            });
+                                          }}
+                                          className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                                        >
+                                          ✕
+                                        </button>
                                       </div>
                                     ))}
                                   </div>
@@ -1164,13 +1190,17 @@ const DeliveryDashboard = () => {
                                   >
                                     <span>📷</span>
                                     <span>
-                                      {proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length > 0
-                                        ? 'Change Photos'
-                                        : 'Select 2 Photos'}
+                                      {proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length === 0 || !proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]
+                                        ? 'Select Photos (2 Required)'
+                                        : proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length === 1
+                                        ? 'Add 1 More Photo'
+                                        : 'Replace Photos'}
                                     </span>
                                   </label>
                                   <p className="text-xs text-gray-500 text-center mt-2">
-                                    Select 2 images at once. JPG, PNG or GIF. Max 5MB per image.
+                                    {proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length === 2
+                                      ? 'You can remove individual photos and add new ones. Max 5MB per image.'
+                                      : `Select ${2 - (proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length || 0)} more image${2 - (proofOfDeliveryImagePreviews[selectedDeliveryForProof.id]?.length || 0) === 1 ? '' : 's'}. JPG, PNG or GIF. Max 5MB per image.`}
                                   </p>
                                 </div>
 
