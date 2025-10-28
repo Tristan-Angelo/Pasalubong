@@ -166,9 +166,9 @@ const VerifyEmail = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-rose-50 to-amber-50 text-gray-800 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-white via-rose-50 to-amber-50 text-gray-800 overflow-x-hidden flex flex-col">
 
-      <main className="relative">
+      <main className="relative flex-1">
         {/* Background accents */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="w-[800px] h-[800px] rounded-full bg-rose-200/60 blur-3xl absolute -top-40 -left-40"></div>

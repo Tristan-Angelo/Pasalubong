@@ -2,18 +2,40 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Configure storage
-const storage = multer.diskStorage({
+// Ensure upload directories exist
+const uploadDirs = [
+  path.join(__dirname, '../../public/uploads/products'),
+  path.join(__dirname, '../../public/uploads/valid_ids')
+];
+
+uploadDirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Configure storage for products
+const productStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Store in public/uploads/products directory
     cb(null, path.join(__dirname, '../../public/uploads/products'));
   },
   filename: function (req, file, cb) {
-    // Generate unique filename: timestamp-randomstring-originalname
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Configure storage for valid IDs
+const validIdStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '../../public/uploads/valid_ids'));
+  },
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
@@ -32,13 +54,26 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Configure multer
-const upload = multer({
-  storage: storage,
+// Configure multer for products
+const productUpload = multer({
+  storage: productStorage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: fileFilter
 });
 
-export default upload;
+// Configure multer for valid IDs
+const validIdUpload = multer({
+  storage: validIdStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: fileFilter
+});
+
+// Default export for backward compatibility (products)
+export default productUpload;
+
+// Named exports
+export { productUpload, validIdUpload };

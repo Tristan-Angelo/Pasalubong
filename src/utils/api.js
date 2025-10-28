@@ -941,3 +941,88 @@ export const markAllDeliveryNotificationsRead = async () => {
 export const deleteDeliveryNotification = async (notificationId) => {
   return deliveryApiCall(`/delivery/notifications/${notificationId}`, { method: 'DELETE' });
 };
+
+// ============= VALID ID UPLOAD API =============
+
+// Seller Valid ID Upload
+export const uploadSellerValidId = async (formData) => {
+  const token = localStorage.getItem('seller_token') || sessionStorage.getItem('seller_token');
+  
+  const response = await fetch(`${API_BASE_URL}/seller/upload-valid-id`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData // Don't set Content-Type, let browser set it with boundary
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.message || data.error || 'Upload failed');
+    throw error;
+  }
+  return data;
+};
+
+// Delivery Valid ID Upload
+export const uploadDeliveryValidId = async (formData) => {
+  const token = localStorage.getItem('delivery_token') || sessionStorage.getItem('delivery_token');
+  
+  const response = await fetch(`${API_BASE_URL}/delivery/upload-valid-id`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.message || data.error || 'Upload failed');
+    throw error;
+  }
+  return data;
+};
+
+// Get Seller Approval Status
+export const getSellerApprovalStatus = async () => {
+  return sellerApiCall('/seller/approval-status', { method: 'GET' });
+};
+
+// Get Delivery Approval Status
+export const getDeliveryApprovalStatus = async () => {
+  return deliveryApiCall('/delivery/approval-status', { method: 'GET' });
+};
+
+// ============= ADMIN APPROVAL API =============
+
+// Get Pending Approvals
+export const getPendingApprovals = async () => {
+  return adminApiCall('/admin/pending-approvals', { method: 'GET' });
+};
+
+// Approve Seller
+export const approveSeller = async (sellerId) => {
+  return adminApiCall(`/admin/approve-seller/${sellerId}`, { method: 'PUT' });
+};
+
+// Decline Seller
+export const declineSeller = async (sellerId, reason) => {
+  return adminApiCall(`/admin/decline-seller/${sellerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason })
+  });
+};
+
+// Approve Delivery
+export const approveDelivery = async (deliveryId) => {
+  return adminApiCall(`/admin/approve-delivery/${deliveryId}`, { method: 'PUT' });
+};
+
+// Decline Delivery Person (Admin)
+export const declineDeliveryPerson = async (deliveryId, reason) => {
+  return adminApiCall(`/admin/decline-delivery/${deliveryId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason })
+  });
+};

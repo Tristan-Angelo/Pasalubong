@@ -13,11 +13,15 @@ import SellerRegister from './pages/seller/SellerRegister';
 import SellerForgotPassword from './pages/seller/SellerForgotPassword';
 import SellerResetPassword from './pages/seller/SellerResetPassword';
 import SellerDashboard from './pages/seller/SellerDashboard';
+import SellerUploadValidId from './pages/seller/SellerUploadValidId';
+import SellerWaitingApproval from './pages/seller/SellerWaitingApproval';
 import DeliveryLogin from './pages/delivery/DeliveryLogin';
 import DeliveryRegister from './pages/delivery/DeliveryRegister';
 import DeliveryForgotPassword from './pages/delivery/DeliveryForgotPassword';
 import DeliveryResetPassword from './pages/delivery/DeliveryResetPassword';
 import DeliveryDashboard from './pages/delivery/DeliveryDashboard';
+import DeliveryUploadValidId from './pages/delivery/DeliveryUploadValidId';
+import DeliveryWaitingApproval from './pages/delivery/DeliveryWaitingApproval';
 import VerifyEmail from './pages/common/VerifyEmail';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLogin from './pages/admin/AdminLogin';
@@ -61,6 +65,22 @@ function App() {
           <Route path="/seller/reset-password" element={<SellerResetPassword />} />
           <Route path="/seller/verify-email" element={<VerifyEmail />} />
           <Route 
+            path="/seller/upload-valid-id" 
+            element={
+              <ProtectedRoute userType="seller">
+                <SellerUploadValidId />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/seller/waiting-approval" 
+            element={
+              <ProtectedRoute userType="seller">
+                <SellerWaitingApproval />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/seller/dashboard" 
             element={
               <ProtectedRoute userType="seller">
@@ -75,6 +95,22 @@ function App() {
           <Route path="/delivery/forgot-password" element={<DeliveryForgotPassword />} />
           <Route path="/delivery/reset-password" element={<DeliveryResetPassword />} />
           <Route path="/delivery/verify-email" element={<VerifyEmail />} />
+          <Route 
+            path="/delivery/upload-valid-id" 
+            element={
+              <ProtectedRoute userType="delivery">
+                <DeliveryUploadValidId />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/delivery/waiting-approval" 
+            element={
+              <ProtectedRoute userType="delivery">
+                <DeliveryWaitingApproval />
+              </ProtectedRoute>
+            } 
+          />
           <Route 
             path="/delivery/dashboard" 
             element={

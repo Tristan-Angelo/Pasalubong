@@ -612,7 +612,9 @@ router.post('/seller/login', async (req, res) => {
       success: true,
       message: 'Login successful',
       token: token,
-      user: sellerObject
+      user: sellerObject,
+      approvalStatus: seller.approvalStatus,
+      isApproved: seller.isApproved
     });
   } catch (error) {
     console.error('Seller login error:', error);
@@ -1074,7 +1076,9 @@ router.post('/delivery/login', async (req, res) => {
       success: true,
       message: 'Login successful',
       token: token,
-      user: deliveryObject
+      user: deliveryObject,
+      approvalStatus: delivery.approvalStatus,
+      isApproved: delivery.isApproved
     });
   } catch (error) {
     console.error('Delivery login error:', error);

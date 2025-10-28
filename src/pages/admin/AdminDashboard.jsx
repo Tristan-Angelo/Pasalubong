@@ -17,8 +17,9 @@ import ActivityLog from '../../components/admin/ActivityLog';
 import BulkActionsModal from '../../components/admin/BulkActionsModal';
 import LoadingProgressBar from '../../components/LoadingProgressBar';
 import SkeletonLoader from '../../components/SkeletonLoader';
+import UserApprovalModal from '../../components/admin/UserApprovalModal';
 import useLazyDashboardData from '../../hooks/useLazyDashboardData';
-import { getCustomers, getSellers, getRiders, updateCustomer, updateSeller, updateRider, toggleUserStatus, deleteCustomer, deleteSeller, deleteRider, getProducts, createProduct, updateProduct, deleteProduct, getOrders, createOrder, updateOrder, deleteOrder, updateOrderStatus, getAdminProfile, updateAdminProfile, changeAdminEmail, changeAdminPassword, getAdminDeliveryPersons, adminAssignDeliveryPerson, getAdminBuyerOrders, getAdminUnreadCount } from '../../utils/api';
+import { getCustomers, getSellers, getRiders, updateCustomer, updateSeller, updateRider, toggleUserStatus, deleteCustomer, deleteSeller, deleteRider, getProducts, createProduct, updateProduct, deleteProduct, getOrders, createOrder, updateOrder, deleteOrder, updateOrderStatus, getAdminProfile, updateAdminProfile, changeAdminEmail, changeAdminPassword, getAdminDeliveryPersons, adminAssignDeliveryPerson, getAdminBuyerOrders, getAdminUnreadCount, getPendingApprovals, approveSeller, declineSeller, approveDelivery, declineDelivery } from '../../utils/api';
 import { getStatusChipColor, getStatusBackgroundColor, getStatusIcon, getDisplayStatus } from '../../utils/orderStatusStyles';
 import { exportDashboardSummary } from '../../utils/excelExport';
 
@@ -80,6 +81,13 @@ const AdminDashboard = () => {
   const [selectedItems, setSelectedItems] = useState([]);
   const [isBulkActionsModalOpen, setIsBulkActionsModalOpen] = useState(false);
   const [bulkActionType, setBulkActionType] = useState('');
+
+  // Pending approvals states
+  const [pendingSellers, setPendingSellers] = useState([]);
+  const [pendingDeliveries, setPendingDeliveries] = useState([]);
+  const [selectedUserForApproval, setSelectedUserForApproval] = useState(null);
+  const [approvalUserType, setApprovalUserType] = useState('');
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
 
   // Analytics states
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -169,7 +177,7 @@ const AdminDashboard = () => {
       ]);
 
       let allOrders = [];
-      
+
       if (ordersData.success) {
         allOrders = [...ordersData.orders];
       }
@@ -232,9 +240,22 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const loadPendingApprovalsData = useCallback(async () => {
+    try {
+      const approvalsData = await getPendingApprovals();
+      if (approvalsData.success) {
+        setPendingSellers(approvalsData.pendingSellers || []);
+        setPendingDeliveries(approvalsData.pendingDeliveries || []);
+      }
+    } catch (error) {
+      console.error('Error loading pending approvals:', error);
+    }
+  }, []);
+
   // Define data loaders for each section
   const dataLoaders = useMemo(() => ({
     dashboard: [loadProductsData, loadCustomersData, loadSellersData, loadOrdersData],
+    'pending-approvals': [loadPendingApprovalsData],
     products: [loadProductsData],
     orders: [loadOrdersData, loadDeliveryPersonsData],
     customers: [loadCustomersData],
@@ -242,7 +263,7 @@ const AdminDashboard = () => {
     riders: [loadRidersData],
     'profile-settings': [loadProfileData],
     'account-settings': [loadProfileData]
-  }), [loadProductsData, loadCustomersData, loadSellersData, loadRidersData, loadOrdersData, loadDeliveryPersonsData, loadProfileData]);
+  }), [loadProductsData, loadCustomersData, loadSellersData, loadRidersData, loadOrdersData, loadDeliveryPersonsData, loadProfileData, loadPendingApprovalsData]);
 
   // Use lazy loading hook
   const { isLoading, isSectionLoaded, canRenderSection, canNavigate, reloadSection, initialLoadComplete, loadingRef } = useLazyDashboardData(
@@ -293,7 +314,7 @@ const AdminDashboard = () => {
   // Generate activity log from recent data
   const generateActivityLog = () => {
     const activities = [];
-    
+
     // Recent orders
     orders.slice(-5).forEach(order => {
       activities.push({
@@ -543,6 +564,7 @@ const AdminDashboard = () => {
   const getPageTitle = () => {
     const titles = {
       dashboard: 'Dashboard',
+      'pending-approvals': 'Pending Approvals',
       products: 'Products',
       orders: 'Orders',
       sellers: 'Sellers',
@@ -554,6 +576,47 @@ const AdminDashboard = () => {
       'account-settings': 'Account Settings'
     };
     return titles[currentPage] || 'Dashboard';
+  };
+
+  // Approval handlers
+  const handleApproveUser = async (userId, userType) => {
+    try {
+      if (userType === 'seller') {
+        await approveSeller(userId);
+        showToast('Seller approved successfully', 'success');
+      } else {
+        await approveDelivery(userId);
+        showToast('Delivery partner approved successfully', 'success');
+      }
+      // Reload pending approvals
+      await loadPendingApprovalsData();
+    } catch (error) {
+      console.error('Approve error:', error);
+      showToast('Failed to approve user', 'error');
+    }
+  };
+
+  const handleDeclineUser = async (userId, reason, userType) => {
+    try {
+      if (userType === 'seller') {
+        await declineSeller(userId, reason);
+        showToast('Seller declined', 'success');
+      } else {
+        await declineDelivery(userId, reason);
+        showToast('Delivery partner declined', 'success');
+      }
+      // Reload pending approvals
+      await loadPendingApprovalsData();
+    } catch (error) {
+      console.error('Decline error:', error);
+      showToast('Failed to decline user', 'error');
+    }
+  };
+
+  const openApprovalModal = (user, userType) => {
+    setSelectedUserForApproval(user);
+    setApprovalUserType(userType);
+    setIsApprovalModalOpen(true);
   };
 
   // Calculate statistics
@@ -604,10 +667,10 @@ const AdminDashboard = () => {
   const topProducts = Object.values(productSalesMap)
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5)
-    .map(p => ({ 
-      label: p.name, 
+    .map(p => ({
+      label: p.name,
       value: p.quantity,
-      revenue: p.revenue 
+      revenue: p.revenue
     }));
 
   // Calculate category data based on products with sales
@@ -617,7 +680,7 @@ const AdminDashboard = () => {
       const productSales = productSalesMap[product.name];
       return sum + (productSales ? productSales.quantity : 0);
     }, 0);
-    
+
     return {
       label: cat,
       value: categoryProducts.length,
@@ -888,7 +951,7 @@ const AdminDashboard = () => {
     <div className="font-inter text-gray-800 bg-gradient-to-b from-white to-gray-50 min-h-screen">
       {/* Loading Progress Bar */}
       <LoadingProgressBar isLoading={isLoading} />
-      
+
       {/* Header */}
       <DashboardNavbar
         userType="admin"
@@ -951,7 +1014,7 @@ const AdminDashboard = () => {
                     </div>
                   </>
                 )}
-                {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers') && (
+                {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers' || currentPage === 'pending-approvals') && (
                   <>
                     <div className="h-12 bg-gray-200 rounded animate-pulse mb-4"></div>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -967,1005 +1030,1148 @@ const AdminDashboard = () => {
               <>
                 {/* Dashboard Page */}
                 {currentPage === 'dashboard' && (
-              <div className="space-y-6">
-                {/* Quick Actions */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={async () => {
-                      try {
-                        const [productsRefresh, ordersRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
-                          getProducts(),
-                          getOrders(),
-                          getSellers(),
-                          getRiders(),
-                          getCustomers()
-                        ]);
-                        if (productsRefresh.success) setProducts(productsRefresh.products);
-                        if (ordersRefresh.success) setOrders(ordersRefresh.orders);
-                        if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
-                        if (ridersRefresh.success) setRiders(ridersRefresh.riders);
-                        if (customersRefresh.success) setCustomers(customersRefresh.customers);
-                        showToast('Dashboard refreshed!', 'success');
-                      } catch (error) {
-                        console.error('Refresh error:', error);
-                        showToast('Failed to refresh dashboard', 'error');
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
-                  >
-                    🔄 Refresh
-                  </button>
-                  <button
-                    onClick={() => setShowAnalytics(!showAnalytics)}
-                    className={`inline-flex items-center gap-2 py-2 px-4 rounded-lg ${
-                      showAnalytics ? 'bg-rose-500 text-white' : 'bg-white border hover:bg-gray-50'
-                    }`}
-                  >
-                    📊 {showAnalytics ? 'Hide' : 'Show'} Analytics
-                  </button>
-                  <button
-                    onClick={() => {
-                      try {
-                        exportDashboardSummary({
-                          statistics: {
-                            totalProducts: products.length,
-                            totalOrders: orders.length,
-                            totalSellers: sellers.length,
-                            totalRiders: riders.length,
-                            totalCustomers: customers.length,
-                            totalSales: totalSales,
-                            lowStockProducts: lowStockProducts.length,
-                            pendingOrders: pendingOrders,
-                            activeDeliveries: activeDeliveries
-                          },
-                          products,
-                          orders,
-                          sellers,
-                          riders,
-                          customers,
-                          lowStockProducts,
-                          topProducts,
-                          orderStatusData,
-                          categoryData
-                        });
-                        showToast('Dashboard summary exported to Excel!', 'success');
-                      } catch (error) {
-                        console.error('Export error:', error);
-                        showToast('Failed to export summary', 'error');
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
-                  >
-                    📊 Export to Excel
-                  </button>
-                </div>
-
-                {/* Statistics Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                  <StatisticsCard
-                    title="Total Sales"
-                    value={`₱${totalSales.toLocaleString()}`}
-                    icon="💰"
-                    trend={salesTrend.trend}
-                    trendValue={salesTrend.value}
-                    color="rose"
-                    delay={0}
-                  />
-                  <StatisticsCard
-                    title="Total Orders"
-                    value={orders.length}
-                    icon="📦"
-                    trend={ordersTrend.trend}
-                    trendValue={ordersTrend.value}
-                    color="blue"
-                    delay={0.05}
-                  />
-                  <StatisticsCard
-                    title="Products"
-                    value={products.length}
-                    icon="🏷️"
-                    trend={productsTrend.trend}
-                    trendValue={productsTrend.value}
-                    color="green"
-                    delay={0.1}
-                  />
-                  <StatisticsCard
-                    title="Pending Orders"
-                    value={pendingOrders}
-                    icon="⏳"
-                    color="yellow"
-                    delay={0.15}
-                  />
-                  <StatisticsCard
-                    title="Active Deliveries"
-                    value={activeDeliveries}
-                    icon="🚚"
-                    color="purple"
-                    delay={0.2}
-                  />
-                  <StatisticsCard
-                    title="Total Users"
-                    value={sellers.length + riders.length + customers.length}
-                    icon="👥"
-                    trend={usersTrend.trend}
-                    trendValue={usersTrend.value}
-                    color="orange"
-                    delay={0.25}
-                  />
-                </div>
-
-                {/* Analytics Section */}
-                {showAnalytics && (
-                  <>
-                    {/* Sales Summary */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                      <div className="card p-4 text-center">
-                        <p className="text-sm text-gray-600 mb-1">Total Products Sold</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                          {Object.values(productSalesMap).reduce((sum, p) => sum + p.quantity, 0)}
-                        </p>
-                      </div>
-                      <div className="card p-4 text-center">
-                        <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          ₱{Object.values(productSalesMap).reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="card p-4 text-center">
-                        <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
-                        <p className="text-2xl font-bold text-purple-600">
-                          ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || o.total || 0), 0) / orders.length).toFixed(2) : '0'}
-                        </p>
-                      </div>
-                      <div className="card p-4 text-center">
-                        <p className="text-sm text-gray-600 mb-1">Unique Products Sold</p>
-                        <p className="text-2xl font-bold text-orange-600">
-                          {Object.keys(productSalesMap).length}
-                        </p>
-                      </div>
+                  <div className="space-y-6">
+                    {/* Quick Actions */}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const [productsRefresh, ordersRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+                              getProducts(),
+                              getOrders(),
+                              getSellers(),
+                              getRiders(),
+                              getCustomers()
+                            ]);
+                            if (productsRefresh.success) setProducts(productsRefresh.products);
+                            if (ordersRefresh.success) setOrders(ordersRefresh.orders);
+                            if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
+                            if (ridersRefresh.success) setRiders(ridersRefresh.riders);
+                            if (customersRefresh.success) setCustomers(customersRefresh.customers);
+                            showToast('Dashboard refreshed!', 'success');
+                          } catch (error) {
+                            console.error('Refresh error:', error);
+                            showToast('Failed to refresh dashboard', 'error');
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
+                      >
+                        🔄 Refresh
+                      </button>
+                      <button
+                        onClick={() => setShowAnalytics(!showAnalytics)}
+                        className={`inline-flex items-center gap-2 py-2 px-4 rounded-lg ${showAnalytics ? 'bg-rose-500 text-white' : 'bg-white border hover:bg-gray-50'
+                          }`}
+                      >
+                        📊 {showAnalytics ? 'Hide' : 'Show'} Analytics
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            exportDashboardSummary({
+                              statistics: {
+                                totalProducts: products.length,
+                                totalOrders: orders.length,
+                                totalSellers: sellers.length,
+                                totalRiders: riders.length,
+                                totalCustomers: customers.length,
+                                totalSales: totalSales,
+                                lowStockProducts: lowStockProducts.length,
+                                pendingOrders: pendingOrders,
+                                activeDeliveries: activeDeliveries
+                              },
+                              products,
+                              orders,
+                              sellers,
+                              riders,
+                              customers,
+                              lowStockProducts,
+                              topProducts,
+                              orderStatusData,
+                              categoryData
+                            });
+                            showToast('Dashboard summary exported to Excel!', 'success');
+                          } catch (error) {
+                            console.error('Export error:', error);
+                            showToast('Failed to export summary', 'error');
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg"
+                      >
+                        📊 Export to Excel
+                      </button>
                     </div>
 
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <AnalyticsChart
-                        title="Order Status Distribution"
-                        data={orderStatusData}
-                        type="bar"
+                    {/* Statistics Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                      <StatisticsCard
+                        title="Total Sales"
+                        value={`₱${totalSales.toLocaleString()}`}
+                        icon="💰"
+                        trend={salesTrend.trend}
+                        trendValue={salesTrend.value}
+                        color="rose"
+                        delay={0}
+                      />
+                      <StatisticsCard
+                        title="Total Orders"
+                        value={orders.length}
+                        icon="📦"
+                        trend={ordersTrend.trend}
+                        trendValue={ordersTrend.value}
                         color="blue"
+                        delay={0.05}
                       />
-                      <AnalyticsChart
-                        title="Top 5 Products by Sales"
-                        data={topProducts.length > 0 ? topProducts : [{ label: 'No sales yet', value: 0 }]}
-                        type="bar"
+                      <StatisticsCard
+                        title="Products"
+                        value={products.length}
+                        icon="🏷️"
+                        trend={productsTrend.trend}
+                        trendValue={productsTrend.value}
                         color="green"
+                        delay={0.1}
                       />
-                      <AnalyticsChart
-                        title="Products by Category"
-                        data={categoryData.length > 0 ? categoryData : [{ label: 'No products yet', value: 0 }]}
-                        type="bar"
+                      <StatisticsCard
+                        title="Pending Orders"
+                        value={pendingOrders}
+                        icon="⏳"
+                        color="yellow"
+                        delay={0.15}
+                      />
+                      <StatisticsCard
+                        title="Active Deliveries"
+                        value={activeDeliveries}
+                        icon="🚚"
+                        color="purple"
+                        delay={0.2}
+                      />
+                      <StatisticsCard
+                        title="Total Users"
+                        value={sellers.length + riders.length + customers.length}
+                        icon="👥"
+                        trend={usersTrend.trend}
+                        trendValue={usersTrend.value}
                         color="orange"
+                        delay={0.25}
                       />
                     </div>
-                  </>
-                )}
 
-                {/* Recent Activity & Low Stock */}
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <ActivityLog activities={activityLog} limit={8} />
-                  <div className="card p-6 hover-animate reveal">
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-lg font-semibold">Recent Orders</h2>
-                      <button
-                        onClick={() => navigateTo('orders')}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg text-sm"
-                      >
-                        View all →
-                      </button>
-                    </div>
-                    <div className="text-sm space-y-2">
-                      {orders.slice(-5).reverse().map(order => (
-                        <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium">{order.orderNumber}</p>
-                            <p className="text-xs text-gray-600">{order.customer}</p>
-                            {order.deliveryPerson && (
-                              <p className="text-xs text-blue-600 mt-1">
-                                🚚 {order.deliveryPerson.name}
-                              </p>
-                            )}
+                    {/* Analytics Section */}
+                    {showAnalytics && (
+                      <>
+                        {/* Sales Summary */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                          <div className="card p-4 text-center">
+                            <p className="text-sm text-gray-600 mb-1">Total Products Sold</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {Object.values(productSalesMap).reduce((sum, p) => sum + p.quantity, 0)}
+                            </p>
                           </div>
-                          <div className="text-right">
-                            <p className="font-medium">₱{order.amount}</p>
-                            <span className={`chip ${getStatusColor(order.status)}`}>{order.status}</span>
+                          <div className="card p-4 text-center">
+                            <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
+                            <p className="text-2xl font-bold text-green-600">
+                              ₱{Object.values(productSalesMap).reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
+                            </p>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="card p-6 hover-animate reveal" style={{ transitionDelay: '0.05s' }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-lg font-semibold">Low Stock Products</h2>
-                      <button
-                        onClick={() => navigateTo('products')}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg text-sm"
-                      >
-                        Manage →
-                      </button>
-                    </div>
-                    <div className="text-sm space-y-2">
-                      {lowStockProducts.length > 0 ? lowStockProducts.map(product => (
-                        <div key={product.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                          <div>
-                            <p className="font-medium">{product.name}</p>
-                            <p className="text-xs text-gray-600">{product.sku}</p>
+                          <div className="card p-4 text-center">
+                            <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
+                            <p className="text-2xl font-bold text-purple-600">
+                              ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || o.total || 0), 0) / orders.length).toFixed(2) : '0'}
+                            </p>
                           </div>
-                          <span className="chip bg-yellow-100 text-yellow-800">{product.stock} left</span>
-                        </div>
-                      )) : (
-                        <p className="text-gray-500 text-center py-4">All products are well stocked!</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Products Page */}
-            {currentPage === 'products' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">Products</h3>
-                    {selectedItems.length > 0 && (
-                      <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
-                        {selectedItems.length} selected
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          const productsData = await getProducts();
-                          if (productsData.success) {
-                            setProducts(productsData.products);
-                            showToast('Products refreshed!', 'success');
-                          }
-                        } catch (error) {
-                          console.error('Refresh error:', error);
-                          showToast('Failed to refresh products', 'error');
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
-                    >
-                      🔄 Refresh
-                    </button>
-                    {selectedItems.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setBulkActionType('products');
-                          setIsBulkActionsModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
-                      >
-                        ⚡ Bulk Actions
-                      </button>
-                    )}
-                    <input
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      placeholder="Search product…"
-                      className="px-3 py-2 rounded-xl border outline-none"
-                    />
-                    <select
-                      value={categoryFilter}
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                      className="px-3 py-2 rounded-xl border"
-                    >
-                      <option value="">All Categories</option>
-                      {categories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => {
-                        setEditingItem(null);
-                        setIsProductModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
-                    >
-                      ➕ Add Product
-                    </button>
-                  </div>
-                </div>
-
-                <div className="card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead className="text-left text-sm border-b">
-                        <tr>
-                          <th className="p-3 w-[50px]">
-                            <input
-                              type="checkbox"
-                              checked={selectedItems.length === getFilteredProducts().length && getFilteredProducts().length > 0}
-                              onChange={() => selectAllItems(getFilteredProducts())}
-                              className="w-4 h-4 rounded border-gray-300"
-                            />
-                          </th>
-                          <th className="p-3 w-[120px]">SKU</th>
-                          <th className="p-3">Name</th>
-                          <th className="p-3 w-[140px]">Category</th>
-                          <th className="p-3 w-[120px]">Seller</th>
-                          <th className="p-3 w-[100px]">Price</th>
-                          <th className="p-3 w-[90px]">Stock</th>
-                          <th className="p-3 w-[120px]">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm">
-                        {getFilteredProducts()
-                          .slice(currentProductPage * itemsPerPage, (currentProductPage + 1) * itemsPerPage)
-                          .map(product => (
-                            <tr key={product.id} className="border-b hover:bg-gray-50">
-                              <td className="p-3">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedItems.includes(product.id)}
-                                  onChange={() => toggleItemSelection(product.id)}
-                                  className="w-4 h-4 rounded border-gray-300"
-                                />
-                              </td>
-                              <td className="p-3">{product.sku}</td>
-                              <td className="p-3">
-                                <div className="flex items-center gap-3">
-                                  <img
-                                    src={product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300'}
-                                    alt={product.name}
-                                    className="w-10 h-10 rounded-lg object-cover bg-gray-100"
-                                    onError={(e) => {
-                                      e.target.onerror = null; // Prevent infinite loop
-                                      e.target.src = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300';
-                                    }}
-                                  />
-                                  <div>
-                                    <p className="font-medium">{product.name}</p>
-                                    <p className="text-xs text-gray-600">{product.description?.substring(0, 50)}...</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-3">{product.category}</td>
-                              <td className="p-3">
-                                <span className="text-sm text-gray-600">
-                                  {product.seller || product.sellerName || 'N/A'}
-                                </span>
-                              </td>
-                              <td className="p-3">₱{product.price}</td>
-                              <td className="p-3">
-                                <span className={`chip ${product.stock <= 10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                  {product.stock}
-                                </span>
-                              </td>
-                              <td className="p-3">
-                                <div className="flex gap-1">
-                                  <button
-                                    onClick={() => {
-                                      setEditingItem(product);
-                                      setIsProductModalOpen(true);
-                                    }}
-                                    className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                                    title="Edit"
-                                  >
-                                    ✏️
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setDeleteConfig({
-                                        type: 'product',
-                                        item: product,
-                                        title: 'Delete Product',
-                                        message: 'Are you sure you want to delete this product? This action cannot be undone.',
-                                        itemName: product.name
-                                      });
-                                      setIsDeleteModalOpen(true);
-                                    }}
-                                    className="p-1 hover:bg-red-100 rounded text-red-600"
-                                    title="Delete"
-                                  >
-                                    🗑️
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="p-3 flex items-center justify-between text-sm border-t">
-                    <div className="text-gray-600">
-                      Showing {currentProductPage * itemsPerPage + 1}-{Math.min((currentProductPage + 1) * itemsPerPage, getFilteredProducts().length)} of {getFilteredProducts().length} products
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setCurrentProductPage(Math.max(0, currentProductPage - 1))}
-                        disabled={currentProductPage === 0}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setCurrentProductPage(currentProductPage + 1)}
-                        disabled={(currentProductPage + 1) * itemsPerPage >= getFilteredProducts().length}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Orders Page */}
-            {currentPage === 'orders' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">Orders</h3>
-                    {selectedItems.length > 0 && (
-                      <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
-                        {selectedItems.length} selected
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          const ordersData = await getOrders();
-                          if (ordersData.success) {
-                            setOrders(ordersData.orders);
-                            showToast('Orders refreshed!', 'success');
-                          }
-                        } catch (error) {
-                          console.error('Refresh error:', error);
-                          showToast('Failed to refresh orders', 'error');
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
-                    >
-                      🔄 Refresh
-                    </button>
-                    {selectedItems.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setBulkActionType('orders');
-                          setIsBulkActionsModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
-                      >
-                        ⚡ Bulk Actions
-                      </button>
-                    )}
-                    <input
-                      value={orderSearch}
-                      onChange={(e) => setOrderSearch(e.target.value)}
-                      placeholder="Search order…"
-                      className="px-3 py-2 rounded-xl border outline-none"
-                    />
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="px-3 py-2 rounded-xl border"
-                    >
-                      <option value="">All Status</option>
-                      <option>Pending</option>
-                      <option>Processing</option>
-                      <option>Out for Delivery</option>
-                      <option>Completed</option>
-                      <option>Cancelled</option>
-                    </select>
-                    <button
-                      onClick={() => {
-                        setEditingItem(null);
-                        setIsOrderModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
-                    >
-                      ➕ Create Order
-                    </button>
-                  </div>
-                </div>
-
-                <div className="card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead className="text-left text-sm border-b">
-                        <tr>
-                          <th className="p-3 w-[50px]">
-                            <input
-                              type="checkbox"
-                              checked={selectedItems.length === getFilteredOrders().length && getFilteredOrders().length > 0}
-                              onChange={() => selectAllItems(getFilteredOrders())}
-                              className="w-4 h-4 rounded border-gray-300"
-                            />
-                          </th>
-                          <th className="p-3 w-[240px]">Order #</th>
-                          <th className="p-3">Customer</th>
-                          <th className="p-3 w-[120px]">Amount</th>
-                          <th className="p-3 w-[140px]">Status</th>
-                          <th className="p-3 w-[140px]">Date</th>
-                          <th className="p-3 w-[130px]">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm">
-                        {getFilteredOrders().length === 0 ? (
-                          <tr>
-                            <td colSpan="6" className="p-8 text-center text-gray-500">
-                              No orders found. {orderSearch || statusFilter ? 'Try adjusting your filters.' : 'Create your first order to get started.'}
-                            </td>
-                          </tr>
-                        ) : (
-                          getFilteredOrders()
-                            .slice(currentOrderPage * itemsPerPage, (currentOrderPage + 1) * itemsPerPage)
-                            .map(order => (
-                              <tr 
-                                key={order.id} 
-                                className={`border-b hover:shadow-md transition-all ${getStatusBackgroundColor(getDisplayStatus(order))}`}
-                              >
-                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedItems.includes(order.id)}
-                                    onChange={() => toggleItemSelection(order.id)}
-                                    className="w-4 h-4 rounded border-gray-300"
-                                  />
-                                </td>
-                                <td 
-                                  className="p-3 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedOrderForTracking(order);
-                                    setShowOrderTrackingModal(true);
-                                  }}
-                                >
-                                  <div>
-                                    <p className="font-medium">{order.orderNumber || 'N/A'}</p>
-                                    {order.deliveryPerson && (
-                                      <p className="text-xs text-blue-600 mt-1">
-                                        🚚 {order.deliveryPerson.name}
-                                      </p>
-                                    )}
-                                  </div>
-                                </td>
-                                <td 
-                                  className="p-3 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedOrderForTracking(order);
-                                    setShowOrderTrackingModal(true);
-                                  }}
-                                >{order.customer || 'N/A'}</td>
-                                <td 
-                                  className="p-3 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedOrderForTracking(order);
-                                    setShowOrderTrackingModal(true);
-                                  }}
-                                >₱{(order.amount || 0).toLocaleString()}</td>
-                                <td 
-                                  className="p-3 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedOrderForTracking(order);
-                                    setShowOrderTrackingModal(true);
-                                  }}
-                                >
-                                  <span className={`chip ${getStatusColor(getDisplayStatus(order))}`}>
-                                    {getStatusIcon(getDisplayStatus(order))} {getDisplayStatus(order)}
-                                  </span>
-                                </td>
-                                <td 
-                                  className="p-3 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedOrderForTracking(order);
-                                    setShowOrderTrackingModal(true);
-                                  }}
-                                >{order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}</td>
-                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => {
-                                        setEditingItem(order);
-                                        setIsOrderModalOpen(true);
-                                      }}
-                                      className="p-1 hover:bg-blue-100 rounded text-blue-600"
-                                      title="Edit"
-                                    >
-                                      ✏️
-                                    </button>
-                                    {(order.status === 'Processing' || order.status === 'Pending') && !order.deliveryPerson && (
-                                      <button
-                                        onClick={() => {
-                                          setSelectedOrderForDelivery(order);
-                                          setShowAssignDeliveryModal(true);
-                                        }}
-                                        className="p-1 hover:bg-purple-100 rounded text-purple-600"
-                                        title="Assign Delivery"
-                                      >
-                                        🚚
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => {
-                                        setDeleteConfig({
-                                          type: 'order',
-                                          item: order,
-                                          title: 'Delete Order',
-                                          message: 'Are you sure you want to delete this order? This action cannot be undone.',
-                                          itemName: `${order.orderNumber} - ${order.customer}`
-                                        });
-                                        setIsDeleteModalOpen(true);
-                                      }}
-                                      className="p-1 hover:bg-red-100 rounded text-red-600"
-                                      title="Delete"
-                                    >
-                                      🗑️
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="p-3 flex items-center justify-between text-sm border-t">
-                    <div className="text-gray-600">
-                      Showing {currentOrderPage * itemsPerPage + 1}-{Math.min((currentOrderPage + 1) * itemsPerPage, getFilteredOrders().length)} of {getFilteredOrders().length} orders
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setCurrentOrderPage(Math.max(0, currentOrderPage - 1))}
-                        disabled={currentOrderPage === 0}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setCurrentOrderPage(currentOrderPage + 1)}
-                        disabled={(currentOrderPage + 1) * itemsPerPage >= getFilteredOrders().length}
-                        className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Sellers/Riders/Customers Pages */}
-            {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers') && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold capitalize">{currentPage}</h3>
-                    {currentPage === 'riders' && (
-                      <div className="group relative">
-                        <button className="text-blue-500 hover:text-blue-600 text-sm">
-                          ℹ️
-                        </button>
-                        <div className="hidden group-hover:block absolute left-0 top-6 z-10 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
-                          <p className="font-semibold text-gray-800 mb-2">📋 Rider Status Guide</p>
-                          <div className="space-y-2 text-gray-600">
-                            <p><span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span> <strong>Active:</strong> Can be assigned deliveries</p>
-                            <p><span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-1"></span> <strong>Inactive:</strong> Cannot be assigned</p>
-                            <p><span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-1"></span> <strong>Available:</strong> Ready for new deliveries</p>
-                            <p><span className="inline-block w-2 h-2 bg-gray-500 rounded-full mr-1"></span> <strong>Unavailable:</strong> Busy or offline</p>
-                            <p className="mt-2 pt-2 border-t text-yellow-700">
-                              💡 <strong>Note:</strong> Only riders who are both Active AND Available will appear in the "Assign Delivery" modal.
+                          <div className="card p-4 text-center">
+                            <p className="text-sm text-gray-600 mb-1">Unique Products Sold</p>
+                            <p className="text-2xl font-bold text-orange-600">
+                              {Object.keys(productSalesMap).length}
                             </p>
                           </div>
                         </div>
+
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <AnalyticsChart
+                            title="Order Status Distribution"
+                            data={orderStatusData}
+                            type="bar"
+                            color="blue"
+                          />
+                          <AnalyticsChart
+                            title="Top 5 Products by Sales"
+                            data={topProducts.length > 0 ? topProducts : [{ label: 'No sales yet', value: 0 }]}
+                            type="bar"
+                            color="green"
+                          />
+                          <AnalyticsChart
+                            title="Products by Category"
+                            data={categoryData.length > 0 ? categoryData : [{ label: 'No products yet', value: 0 }]}
+                            type="bar"
+                            color="orange"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Recent Activity & Low Stock */}
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <ActivityLog activities={activityLog} limit={8} />
+                      <div className="card p-6 hover-animate reveal">
+                        <div className="flex items-center justify-between mb-3">
+                          <h2 className="text-lg font-semibold">Recent Orders</h2>
+                          <button
+                            onClick={() => navigateTo('orders')}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg text-sm"
+                          >
+                            View all →
+                          </button>
+                        </div>
+                        <div className="text-sm space-y-2">
+                          {orders.slice(-5).reverse().map(order => (
+                            <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex-1">
+                                <p className="font-medium">{order.orderNumber}</p>
+                                <p className="text-xs text-gray-600">{order.customer}</p>
+                                {order.deliveryPerson && (
+                                  <p className="text-xs text-blue-600 mt-1">
+                                    🚚 {order.deliveryPerson.name}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <p className="font-medium">₱{order.amount}</p>
+                                <span className={`chip ${getStatusColor(order.status)}`}>{order.status}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="card p-6 hover-animate reveal" style={{ transitionDelay: '0.05s' }}>
+                        <div className="flex items-center justify-between mb-3">
+                          <h2 className="text-lg font-semibold">Low Stock Products</h2>
+                          <button
+                            onClick={() => navigateTo('products')}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg text-sm"
+                          >
+                            Manage →
+                          </button>
+                        </div>
+                        <div className="text-sm space-y-2">
+                          {lowStockProducts.length > 0 ? lowStockProducts.map(product => (
+                            <div key={product.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                              <div>
+                                <p className="font-medium">{product.name}</p>
+                                <p className="text-xs text-gray-600">{product.sku}</p>
+                              </div>
+                              <span className="chip bg-yellow-100 text-yellow-800">{product.stock} left</span>
+                            </div>
+                          )) : (
+                            <p className="text-gray-500 text-center py-4">All products are well stocked!</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Approvals Page */}
+                {currentPage === 'pending-approvals' && (
+                  <div className="space-y-6">
+                    {/* Refresh Button */}
+                    <div className="flex justify-end">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await loadPendingApprovalsData();
+                            showToast('Pending approvals refreshed!', 'success');
+                          } catch (error) {
+                            console.error('Refresh error:', error);
+                            showToast('Failed to refresh pending approvals', 'error');
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                      >
+                        🔄 Refresh
+                      </button>
+                    </div>
+
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="card p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">Pending Sellers</h3>
+                          <span className="text-3xl">🏪</span>
+                        </div>
+                        <p className="text-4xl font-bold text-rose-600">{pendingSellers.length}</p>
+                        <p className="text-sm text-gray-600 mt-2">Awaiting approval</p>
+                      </div>
+
+                      <div className="card p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">Pending Riders</h3>
+                          <span className="text-3xl">🚴</span>
+                        </div>
+                        <p className="text-4xl font-bold text-blue-600">{pendingDeliveries.length}</p>
+                        <p className="text-sm text-gray-600 mt-2">Awaiting approval</p>
+                      </div>
+                    </div>
+
+                    {/* Pending Sellers Section */}
+                    {pendingSellers.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4">Pending Sellers</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {pendingSellers.map(seller => (
+                            <div
+                              key={seller.id || seller._id}
+                              className="card p-4 hover:shadow-lg transition-all cursor-pointer"
+                              onClick={() => openApprovalModal(seller, 'seller')}
+                            >
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-gray-900">{seller.businessName}</h4>
+                                  <p className="text-sm text-gray-600">{seller.ownerName}</p>
+                                </div>
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                                  Pending
+                                </span>
+                              </div>
+
+                              <div className="space-y-2 text-sm text-gray-600">
+                                <div className="flex items-center gap-2">
+                                  <span>📧</span>
+                                  <span className="truncate">{seller.email}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>📞</span>
+                                  <span>{seller.phone}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>🏢</span>
+                                  <span className="truncate">{seller.businessType}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>📍</span>
+                                  <span className="truncate">{seller.city}, {seller.province}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500">
+                                Registered: {new Date(seller.createdAt).toLocaleDateString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pending Delivery Partners Section */}
+                    {pendingDeliveries.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4">Pending Delivery Partners</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {pendingDeliveries.map(delivery => (
+                            <div
+                              key={delivery.id || delivery._id}
+                              className="card p-4 hover:shadow-lg transition-all cursor-pointer"
+                              onClick={() => openApprovalModal(delivery, 'delivery')}
+                            >
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-gray-900">{delivery.fullname}</h4>
+                                  <p className="text-sm text-gray-600">{delivery.vehicleType}</p>
+                                </div>
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                                  Pending
+                                </span>
+                              </div>
+
+                              <div className="space-y-2 text-sm text-gray-600">
+                                <div className="flex items-center gap-2">
+                                  <span>📧</span>
+                                  <span className="truncate">{delivery.email}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>📞</span>
+                                  <span>{delivery.phone}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>🚗</span>
+                                  <span className="truncate">{delivery.vehiclePlate || delivery.licenseNumber}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span>📍</span>
+                                  <span className="truncate">{delivery.city}, {delivery.province}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500">
+                                Registered: {new Date(delivery.createdAt).toLocaleDateString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {pendingSellers.length === 0 && pendingDeliveries.length === 0 && (
+                      <div className="card p-12 text-center">
+                        <div className="text-6xl mb-4">✅</div>
+                        <h3 className="text-xl font-semibold mb-2">All Caught Up!</h3>
+                        <p className="text-gray-600">There are no pending approvals at the moment.</p>
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          let data;
-                          if (currentPage === 'sellers') {
-                            data = await getSellers();
-                            if (data.success) {
-                              setSellers(data.sellers);
-                              showToast('Sellers refreshed!', 'success');
+                )}
+
+                {/* Products Page */}
+                {currentPage === 'products' && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold">Products</h3>
+                        {selectedItems.length > 0 && (
+                          <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
+                            {selectedItems.length} selected
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const productsData = await getProducts();
+                              if (productsData.success) {
+                                setProducts(productsData.products);
+                                showToast('Products refreshed!', 'success');
+                              }
+                            } catch (error) {
+                              console.error('Refresh error:', error);
+                              showToast('Failed to refresh products', 'error');
                             }
-                          } else if (currentPage === 'riders') {
-                            data = await getRiders();
-                            if (data.success) {
-                              setRiders(data.riders);
-                              showToast('Riders refreshed!', 'success');
+                          }}
+                          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                        >
+                          🔄 Refresh
+                        </button>
+                        {selectedItems.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setBulkActionType('products');
+                              setIsBulkActionsModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
+                          >
+                            ⚡ Bulk Actions
+                          </button>
+                        )}
+                        <input
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          placeholder="Search product…"
+                          className="px-3 py-2 rounded-xl border outline-none"
+                        />
+                        <select
+                          value={categoryFilter}
+                          onChange={(e) => setCategoryFilter(e.target.value)}
+                          className="px-3 py-2 rounded-xl border"
+                        >
+                          <option value="">All Categories</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => {
+                            setEditingItem(null);
+                            setIsProductModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
+                        >
+                          ➕ Add Product
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="card overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                          <thead className="text-left text-sm border-b">
+                            <tr>
+                              <th className="p-3 w-[50px]">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItems.length === getFilteredProducts().length && getFilteredProducts().length > 0}
+                                  onChange={() => selectAllItems(getFilteredProducts())}
+                                  className="w-4 h-4 rounded border-gray-300"
+                                />
+                              </th>
+                              <th className="p-3 w-[120px]">SKU</th>
+                              <th className="p-3">Name</th>
+                              <th className="p-3 w-[140px]">Category</th>
+                              <th className="p-3 w-[120px]">Seller</th>
+                              <th className="p-3 w-[100px]">Price</th>
+                              <th className="p-3 w-[90px]">Stock</th>
+                              <th className="p-3 w-[120px]">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {getFilteredProducts()
+                              .slice(currentProductPage * itemsPerPage, (currentProductPage + 1) * itemsPerPage)
+                              .map(product => (
+                                <tr key={product.id} className="border-b hover:bg-gray-50">
+                                  <td className="p-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedItems.includes(product.id)}
+                                      onChange={() => toggleItemSelection(product.id)}
+                                      className="w-4 h-4 rounded border-gray-300"
+                                    />
+                                  </td>
+                                  <td className="p-3">{product.sku}</td>
+                                  <td className="p-3">
+                                    <div className="flex items-center gap-3">
+                                      <img
+                                        src={product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300'}
+                                        alt={product.name}
+                                        className="w-10 h-10 rounded-lg object-cover bg-gray-100"
+                                        onError={(e) => {
+                                          e.target.onerror = null; // Prevent infinite loop
+                                          e.target.src = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300';
+                                        }}
+                                      />
+                                      <div>
+                                        <p className="font-medium">{product.name}</p>
+                                        <p className="text-xs text-gray-600">{product.description?.substring(0, 50)}...</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="p-3">{product.category}</td>
+                                  <td className="p-3">
+                                    <span className="text-sm text-gray-600">
+                                      {product.seller || product.sellerName || 'N/A'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">₱{product.price}</td>
+                                  <td className="p-3">
+                                    <span className={`chip ${product.stock <= 10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                      {product.stock}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex gap-1">
+                                      <button
+                                        onClick={() => {
+                                          setEditingItem(product);
+                                          setIsProductModalOpen(true);
+                                        }}
+                                        className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                        title="Edit"
+                                      >
+                                        ✏️
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setDeleteConfig({
+                                            type: 'product',
+                                            item: product,
+                                            title: 'Delete Product',
+                                            message: 'Are you sure you want to delete this product? This action cannot be undone.',
+                                            itemName: product.name
+                                          });
+                                          setIsDeleteModalOpen(true);
+                                        }}
+                                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                                        title="Delete"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="p-3 flex items-center justify-between text-sm border-t">
+                        <div className="text-gray-600">
+                          Showing {currentProductPage * itemsPerPage + 1}-{Math.min((currentProductPage + 1) * itemsPerPage, getFilteredProducts().length)} of {getFilteredProducts().length} products
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setCurrentProductPage(Math.max(0, currentProductPage - 1))}
+                            disabled={currentProductPage === 0}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            onClick={() => setCurrentProductPage(currentProductPage + 1)}
+                            disabled={(currentProductPage + 1) * itemsPerPage >= getFilteredProducts().length}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Orders Page */}
+                {currentPage === 'orders' && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold">Orders</h3>
+                        {selectedItems.length > 0 && (
+                          <span className="bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-medium">
+                            {selectedItems.length} selected
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const ordersData = await getOrders();
+                              if (ordersData.success) {
+                                setOrders(ordersData.orders);
+                                showToast('Orders refreshed!', 'success');
+                              }
+                            } catch (error) {
+                              console.error('Refresh error:', error);
+                              showToast('Failed to refresh orders', 'error');
                             }
-                          } else {
-                            data = await getCustomers();
-                            if (data.success) {
-                              setCustomers(data.customers);
-                              showToast('Customers refreshed!', 'success');
+                          }}
+                          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                        >
+                          🔄 Refresh
+                        </button>
+                        {selectedItems.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setBulkActionType('orders');
+                              setIsBulkActionsModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg"
+                          >
+                            ⚡ Bulk Actions
+                          </button>
+                        )}
+                        <input
+                          value={orderSearch}
+                          onChange={(e) => setOrderSearch(e.target.value)}
+                          placeholder="Search order…"
+                          className="px-3 py-2 rounded-xl border outline-none"
+                        />
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value)}
+                          className="px-3 py-2 rounded-xl border"
+                        >
+                          <option value="">All Status</option>
+                          <option>Pending</option>
+                          <option>Processing</option>
+                          <option>Out for Delivery</option>
+                          <option>Completed</option>
+                          <option>Cancelled</option>
+                        </select>
+                        <button
+                          onClick={() => {
+                            setEditingItem(null);
+                            setIsOrderModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
+                        >
+                          ➕ Create Order
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="card overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                          <thead className="text-left text-sm border-b">
+                            <tr>
+                              <th className="p-3 w-[50px]">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItems.length === getFilteredOrders().length && getFilteredOrders().length > 0}
+                                  onChange={() => selectAllItems(getFilteredOrders())}
+                                  className="w-4 h-4 rounded border-gray-300"
+                                />
+                              </th>
+                              <th className="p-3 w-[240px]">Order #</th>
+                              <th className="p-3">Customer</th>
+                              <th className="p-3 w-[120px]">Amount</th>
+                              <th className="p-3 w-[140px]">Status</th>
+                              <th className="p-3 w-[140px]">Date</th>
+                              <th className="p-3 w-[130px]">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {getFilteredOrders().length === 0 ? (
+                              <tr>
+                                <td colSpan="6" className="p-8 text-center text-gray-500">
+                                  No orders found. {orderSearch || statusFilter ? 'Try adjusting your filters.' : 'Create your first order to get started.'}
+                                </td>
+                              </tr>
+                            ) : (
+                              getFilteredOrders()
+                                .slice(currentOrderPage * itemsPerPage, (currentOrderPage + 1) * itemsPerPage)
+                                .map(order => (
+                                  <tr
+                                    key={order.id}
+                                    className={`border-b hover:shadow-md transition-all ${getStatusBackgroundColor(getDisplayStatus(order))}`}
+                                  >
+                                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedItems.includes(order.id)}
+                                        onChange={() => toggleItemSelection(order.id)}
+                                        className="w-4 h-4 rounded border-gray-300"
+                                      />
+                                    </td>
+                                    <td
+                                      className="p-3 cursor-pointer"
+                                      onClick={() => {
+                                        setSelectedOrderForTracking(order);
+                                        setShowOrderTrackingModal(true);
+                                      }}
+                                    >
+                                      <div>
+                                        <p className="font-medium">{order.orderNumber || 'N/A'}</p>
+                                        {order.deliveryPerson && (
+                                          <p className="text-xs text-blue-600 mt-1">
+                                            🚚 {order.deliveryPerson.name}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td
+                                      className="p-3 cursor-pointer"
+                                      onClick={() => {
+                                        setSelectedOrderForTracking(order);
+                                        setShowOrderTrackingModal(true);
+                                      }}
+                                    >{order.customer || 'N/A'}</td>
+                                    <td
+                                      className="p-3 cursor-pointer"
+                                      onClick={() => {
+                                        setSelectedOrderForTracking(order);
+                                        setShowOrderTrackingModal(true);
+                                      }}
+                                    >₱{(order.amount || 0).toLocaleString()}</td>
+                                    <td
+                                      className="p-3 cursor-pointer"
+                                      onClick={() => {
+                                        setSelectedOrderForTracking(order);
+                                        setShowOrderTrackingModal(true);
+                                      }}
+                                    >
+                                      <span className={`chip ${getStatusColor(getDisplayStatus(order))}`}>
+                                        {getStatusIcon(getDisplayStatus(order))} {getDisplayStatus(order)}
+                                      </span>
+                                    </td>
+                                    <td
+                                      className="p-3 cursor-pointer"
+                                      onClick={() => {
+                                        setSelectedOrderForTracking(order);
+                                        setShowOrderTrackingModal(true);
+                                      }}
+                                    >{order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}</td>
+                                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                      <div className="flex gap-1">
+                                        <button
+                                          onClick={() => {
+                                            setEditingItem(order);
+                                            setIsOrderModalOpen(true);
+                                          }}
+                                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                          title="Edit"
+                                        >
+                                          ✏️
+                                        </button>
+                                        {(order.status === 'Processing' || order.status === 'Pending') && !order.deliveryPerson && (
+                                          <button
+                                            onClick={() => {
+                                              setSelectedOrderForDelivery(order);
+                                              setShowAssignDeliveryModal(true);
+                                            }}
+                                            className="p-1 hover:bg-purple-100 rounded text-purple-600"
+                                            title="Assign Delivery"
+                                          >
+                                            🚚
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => {
+                                            setDeleteConfig({
+                                              type: 'order',
+                                              item: order,
+                                              title: 'Delete Order',
+                                              message: 'Are you sure you want to delete this order? This action cannot be undone.',
+                                              itemName: `${order.orderNumber} - ${order.customer}`
+                                            });
+                                            setIsDeleteModalOpen(true);
+                                          }}
+                                          className="p-1 hover:bg-red-100 rounded text-red-600"
+                                          title="Delete"
+                                        >
+                                          🗑️
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="p-3 flex items-center justify-between text-sm border-t">
+                        <div className="text-gray-600">
+                          Showing {currentOrderPage * itemsPerPage + 1}-{Math.min((currentOrderPage + 1) * itemsPerPage, getFilteredOrders().length)} of {getFilteredOrders().length} orders
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setCurrentOrderPage(Math.max(0, currentOrderPage - 1))}
+                            disabled={currentOrderPage === 0}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            onClick={() => setCurrentOrderPage(currentOrderPage + 1)}
+                            disabled={(currentOrderPage + 1) * itemsPerPage >= getFilteredOrders().length}
+                            className="inline-flex items-center gap-2 bg-white border hover:bg-gray-50 py-2 px-4 rounded-lg disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sellers/Riders/Customers Pages */}
+                {(currentPage === 'sellers' || currentPage === 'riders' || currentPage === 'customers') && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold capitalize">{currentPage}</h3>
+                        {currentPage === 'riders' && (
+                          <div className="group relative">
+                            <button className="text-blue-500 hover:text-blue-600 text-sm">
+                              ℹ️
+                            </button>
+                            <div className="hidden group-hover:block absolute left-0 top-6 z-10 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+                              <p className="font-semibold text-gray-800 mb-2">📋 Rider Status Guide</p>
+                              <div className="space-y-2 text-gray-600">
+                                <p><span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span> <strong>Active:</strong> Can be assigned deliveries</p>
+                                <p><span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-1"></span> <strong>Inactive:</strong> Cannot be assigned</p>
+                                <p><span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-1"></span> <strong>Available:</strong> Ready for new deliveries</p>
+                                <p><span className="inline-block w-2 h-2 bg-gray-500 rounded-full mr-1"></span> <strong>Unavailable:</strong> Busy or offline</p>
+                                <p className="mt-2 pt-2 border-t text-yellow-700">
+                                  💡 <strong>Note:</strong> Only riders who are both Active AND Available will appear in the "Assign Delivery" modal.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              let data;
+                              if (currentPage === 'sellers') {
+                                data = await getSellers();
+                                if (data.success) {
+                                  setSellers(data.sellers);
+                                  showToast('Sellers refreshed!', 'success');
+                                }
+                              } else if (currentPage === 'riders') {
+                                data = await getRiders();
+                                if (data.success) {
+                                  setRiders(data.riders);
+                                  showToast('Riders refreshed!', 'success');
+                                }
+                              } else {
+                                data = await getCustomers();
+                                if (data.success) {
+                                  setCustomers(data.customers);
+                                  showToast('Customers refreshed!', 'success');
+                                }
+                              }
+                            } catch (error) {
+                              console.error('Refresh error:', error);
+                              showToast(`Failed to refresh ${currentPage}`, 'error');
                             }
+                          }}
+                          className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
+                        >
+                          🔄 Refresh
+                        </button>
+                        {/* Search Input */}
+                        <input
+                          value={
+                            currentPage === 'sellers' ? sellerSearch :
+                              currentPage === 'riders' ? riderSearch :
+                                customerSearch
                           }
-                        } catch (error) {
-                          console.error('Refresh error:', error);
-                          showToast(`Failed to refresh ${currentPage}`, 'error');
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg"
-                    >
-                      🔄 Refresh
-                    </button>
-                    {/* Search Input */}
-                    <input
-                      value={
-                        currentPage === 'sellers' ? sellerSearch :
-                          currentPage === 'riders' ? riderSearch :
-                            customerSearch
-                      }
-                      onChange={(e) => {
-                        if (currentPage === 'sellers') setSellerSearch(e.target.value);
-                        else if (currentPage === 'riders') setRiderSearch(e.target.value);
-                        else setCustomerSearch(e.target.value);
-                      }}
-                      placeholder={`Search ${currentPage.slice(0, -1)}...`}
-                      className="px-3 py-2 rounded-xl border outline-none"
-                    />
+                          onChange={(e) => {
+                            if (currentPage === 'sellers') setSellerSearch(e.target.value);
+                            else if (currentPage === 'riders') setRiderSearch(e.target.value);
+                            else setCustomerSearch(e.target.value);
+                          }}
+                          placeholder={`Search ${currentPage.slice(0, -1)}...`}
+                          className="px-3 py-2 rounded-xl border outline-none"
+                        />
 
-                    {/* Vehicle Type Filter for Riders */}
-                    {currentPage === 'riders' && (
-                      <select
-                        value={vehicleTypeFilter}
-                        onChange={(e) => setVehicleTypeFilter(e.target.value)}
-                        className="px-3 py-2 rounded-xl border"
-                      >
-                        <option value="">All Vehicles</option>
-                        {vehicleTypes.map(type => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    )}
+                        {/* Vehicle Type Filter for Riders */}
+                        {currentPage === 'riders' && (
+                          <select
+                            value={vehicleTypeFilter}
+                            onChange={(e) => setVehicleTypeFilter(e.target.value)}
+                            className="px-3 py-2 rounded-xl border"
+                          >
+                            <option value="">All Vehicles</option>
+                            {vehicleTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        )}
 
+                        <button
+                          onClick={() => {
+                            setEditingItem(null);
+                            setCurrentUserType(currentPage.slice(0, -1));
+                            setIsUserModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
+                        >
+                          ➕ Add {currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1)}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* User Cards Grid */}
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {(currentPage === 'sellers' ? getFilteredSellers() :
+                        currentPage === 'riders' ? getFilteredRiders() :
+                          getFilteredCustomers()).length === 0 ? (
+                        <div className="col-span-full text-center py-12 text-gray-500">
+                          No {currentPage} found. {
+                            (currentPage === 'sellers' && sellerSearch) ||
+                              (currentPage === 'riders' && (riderSearch || vehicleTypeFilter)) ||
+                              (currentPage === 'customers' && customerSearch)
+                              ? 'Try adjusting your search filters.'
+                              : `Add your first ${currentPage.slice(0, -1)} to get started.`
+                          }
+                        </div>
+                      ) : (
+                        (currentPage === 'sellers' ? getFilteredSellers() :
+                          currentPage === 'riders' ? getFilteredRiders() :
+                            getFilteredCustomers()).map(user => (
+                              <div key={user.id} className="card p-4 hover-animate relative">
+                                {/* Account Status Indicator for all user types */}
+                                <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${(user.isActive !== undefined ? user.isActive : true)
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-red-100 text-red-800'
+                                    }`}>
+                                    <span className={`w-2 h-2 rounded-full ${(user.isActive !== undefined ? user.isActive : true) ? 'bg-green-500' : 'bg-red-500'
+                                      }`}></span>
+                                    {(user.isActive !== undefined ? user.isActive : true) ? 'Active' : 'Inactive'}
+                                  </span>
+                                  {/* Availability Status for Riders only */}
+                                  {currentPage === 'riders' && (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${(user.isAvailable !== undefined ? user.isAvailable : true)
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                      }`}>
+                                      <span className={`w-2 h-2 rounded-full ${(user.isAvailable !== undefined ? user.isAvailable : true) ? 'bg-blue-500' : 'bg-gray-500'
+                                        }`}></span>
+                                      {(user.isAvailable !== undefined ? user.isAvailable : true) ? 'Available' : 'Unavailable'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-3 mb-3">
+                                  <div className={`w-12 h-12 rounded-full overflow-hidden flex items-center justify-center border-2 ${currentPage === 'sellers'
+                                      ? 'bg-rose-50 border-rose-500'
+                                      : currentPage === 'riders'
+                                        ? 'bg-blue-50 border-blue-500'
+                                        : 'bg-purple-50 border-purple-500'
+                                    }`}>
+                                    {user.image ? (
+                                      <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className={`text-2xl font-semibold ${currentPage === 'sellers'
+                                          ? 'text-rose-600'
+                                          : currentPage === 'riders'
+                                            ? 'text-blue-600'
+                                            : 'text-purple-600'
+                                        }`}>
+                                        {currentPage === 'sellers' ? '🏪' : currentPage === 'riders' ? '🚚' : '👤'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold">{user.name}</h4>
+                                    <p className="text-sm text-gray-600">{user.email}</p>
+                                    {user.storeName && <p className="text-xs text-gray-500">{user.storeName}</p>}
+                                    {user.vehicleType && <p className="text-xs text-gray-500">{user.vehicleType}</p>}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingItem(user);
+                                      setEditedUserData(user);
+                                      setCurrentUserType(currentPage.slice(0, -1));
+                                      setIsUserModalOpen(true);
+                                    }}
+                                    className="flex-1 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm"
+                                  >
+                                    Edit
+                                  </button>
+                                  {(currentPage === 'riders' || currentPage === 'sellers' || currentPage === 'customers') && (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const currentStatus = user.isActive !== undefined ? user.isActive : true;
+                                          const newStatus = !currentStatus;
+                                          const userType = currentPage; // 'riders', 'sellers', or 'customers'
+
+                                          // Call API to toggle status
+                                          const response = await toggleUserStatus(userType, user.id, newStatus);
+
+                                          if (response.success) {
+                                            // Refresh the data from server to ensure consistency
+                                            let refreshData;
+                                            if (currentPage === 'riders') {
+                                              refreshData = await getRiders();
+                                              if (refreshData.success) {
+                                                setRiders(refreshData.riders);
+                                              }
+                                            } else if (currentPage === 'sellers') {
+                                              refreshData = await getSellers();
+                                              if (refreshData.success) {
+                                                setSellers(refreshData.sellers);
+                                              }
+                                            } else if (currentPage === 'customers') {
+                                              refreshData = await getCustomers();
+                                              if (refreshData.success) {
+                                                setCustomers(refreshData.customers);
+                                              }
+                                            }
+
+                                            const userTypeName = currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1);
+                                            showToast(`${userTypeName} ${newStatus ? 'activated' : 'deactivated'} successfully!`, 'success');
+                                          }
+                                        } catch (error) {
+                                          console.error('Toggle status error:', error);
+                                          showToast(`Failed to update ${currentPage.slice(0, -1)} status`, 'error');
+                                        }
+                                      }}
+                                      className={`flex-1 py-2 px-3 rounded-lg text-sm ${(user.isActive !== undefined ? user.isActive : true)
+                                          ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                                          : 'bg-green-50 text-green-700 hover:bg-green-100'
+                                        }`}
+                                    >
+                                      {(user.isActive !== undefined ? user.isActive : true) ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      const userType = currentPage.slice(0, -1);
+                                      setDeleteConfig({
+                                        type: 'user',
+                                        item: user,
+                                        userType: userType,
+                                        title: `Delete ${userType.charAt(0).toUpperCase() + userType.slice(1)}`,
+                                        message: `Are you sure you want to delete this ${userType}? This action cannot be undone.`,
+                                        itemName: user.name
+                                      });
+                                      setIsDeleteModalOpen(true);
+                                    }}
+                                    className="flex-1 py-2 px-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Reports Page */}
+                {currentPage === 'reports' && (
+                  <div className="card p-6 hover-animate reveal">
+                    <h2 className="text-lg font-semibold mb-4">Quick Reports</h2>
+                    <p className="text-gray-600 mb-4">Export summarized metrics as JSON.</p>
                     <button
                       onClick={() => {
-                        setEditingItem(null);
-                        setCurrentUserType(currentPage.slice(0, -1));
-                        setIsUserModalOpen(true);
+                        try {
+                          exportDashboardSummary({
+                            statistics: {
+                              totalProducts: products.length,
+                              totalOrders: orders.length,
+                              totalSellers: sellers.length,
+                              totalRiders: riders.length,
+                              totalCustomers: customers.length,
+                              totalSales: totalSales,
+                              lowStockProducts: lowStockProducts.length,
+                              pendingOrders: pendingOrders,
+                              activeDeliveries: activeDeliveries
+                            },
+                            products,
+                            orders,
+                            sellers,
+                            riders,
+                            customers,
+                            lowStockProducts,
+                            topProducts,
+                            orderStatusData,
+                            categoryData
+                          });
+                          showToast('Summary report exported to Excel!', 'success');
+                        } catch (error) {
+                          console.error('Export error:', error);
+                          showToast('Failed to export summary', 'error');
+                        }
                       }}
                       className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
                     >
-                      ➕ Add {currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1)}
+                      📊 Download Excel Report
                     </button>
                   </div>
-                </div>
+                )}
 
-                {/* User Cards Grid */}
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(currentPage === 'sellers' ? getFilteredSellers() :
-                    currentPage === 'riders' ? getFilteredRiders() :
-                      getFilteredCustomers()).length === 0 ? (
-                    <div className="col-span-full text-center py-12 text-gray-500">
-                      No {currentPage} found. {
-                        (currentPage === 'sellers' && sellerSearch) ||
-                          (currentPage === 'riders' && (riderSearch || vehicleTypeFilter)) ||
-                          (currentPage === 'customers' && customerSearch)
-                          ? 'Try adjusting your search filters.'
-                          : `Add your first ${currentPage.slice(0, -1)} to get started.`
-                      }
-                    </div>
-                  ) : (
-                    (currentPage === 'sellers' ? getFilteredSellers() :
-                      currentPage === 'riders' ? getFilteredRiders() :
-                        getFilteredCustomers()).map(user => (
-                         <div key={user.id} className="card p-4 hover-animate relative">
-                            {/* Account Status Indicator for all user types */}
-                            <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                                (user.isActive !== undefined ? user.isActive : true)
-                                  ? 'bg-green-100 text-green-800' 
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                                <span className={`w-2 h-2 rounded-full ${
-                                  (user.isActive !== undefined ? user.isActive : true) ? 'bg-green-500' : 'bg-red-500'
-                                }`}></span>
-                                {(user.isActive !== undefined ? user.isActive : true) ? 'Active' : 'Inactive'}
-                              </span>
-                              {/* Availability Status for Riders only */}
-                              {currentPage === 'riders' && (
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                                  (user.isAvailable !== undefined ? user.isAvailable : true)
-                                    ? 'bg-blue-100 text-blue-800' 
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  <span className={`w-2 h-2 rounded-full ${
-                                    (user.isAvailable !== undefined ? user.isAvailable : true) ? 'bg-blue-500' : 'bg-gray-500'
-                                  }`}></span>
-                                  {(user.isAvailable !== undefined ? user.isAvailable : true) ? 'Available' : 'Unavailable'}
-                                </span>
-                              )}
-                            </div>
-                            
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className={`w-12 h-12 rounded-full overflow-hidden flex items-center justify-center border-2 ${
-                                currentPage === 'sellers' 
-                                  ? 'bg-rose-50 border-rose-500' 
-                                  : currentPage === 'riders' 
-                                  ? 'bg-blue-50 border-blue-500' 
-                                  : 'bg-purple-50 border-purple-500'
-                              }`}>
-                                {user.image ? (
-                                  <img src={user.image} alt={user.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className={`text-2xl font-semibold ${
-                                    currentPage === 'sellers' 
-                                      ? 'text-rose-600' 
-                                      : currentPage === 'riders' 
-                                      ? 'text-blue-600' 
-                                      : 'text-purple-600'
-                                  }`}>
-                                    {currentPage === 'sellers' ? '🏪' : currentPage === 'riders' ? '🚚' : '👤'}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex-1">
-                                <h4 className="font-semibold">{user.name}</h4>
-                                <p className="text-sm text-gray-600">{user.email}</p>
-                                {user.storeName && <p className="text-xs text-gray-500">{user.storeName}</p>}
-                                {user.vehicleType && <p className="text-xs text-gray-500">{user.vehicleType}</p>}
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(user);
-                                  setEditedUserData(user);
-                                  setCurrentUserType(currentPage.slice(0, -1));
-                                  setIsUserModalOpen(true);
-                                }}
-                                className="flex-1 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm"
-                              >
-                                Edit
-                              </button>
-                               {(currentPage === 'riders' || currentPage === 'sellers' || currentPage === 'customers') && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const currentStatus = user.isActive !== undefined ? user.isActive : true;
-                                      const newStatus = !currentStatus;
-                                      const userType = currentPage; // 'riders', 'sellers', or 'customers'
-                                      
-                                      // Call API to toggle status
-                                      const response = await toggleUserStatus(userType, user.id, newStatus);
-                                      
-                                      if (response.success) {
-                                        // Refresh the data from server to ensure consistency
-                                        let refreshData;
-                                        if (currentPage === 'riders') {
-                                          refreshData = await getRiders();
-                                          if (refreshData.success) {
-                                            setRiders(refreshData.riders);
-                                          }
-                                        } else if (currentPage === 'sellers') {
-                                          refreshData = await getSellers();
-                                          if (refreshData.success) {
-                                            setSellers(refreshData.sellers);
-                                          }
-                                        } else if (currentPage === 'customers') {
-                                          refreshData = await getCustomers();
-                                          if (refreshData.success) {
-                                            setCustomers(refreshData.customers);
-                                          }
-                                        }
-                                        
-                                        const userTypeName = currentPage.slice(0, -1).charAt(0).toUpperCase() + currentPage.slice(1, -1);
-                                        showToast(`${userTypeName} ${newStatus ? 'activated' : 'deactivated'} successfully!`, 'success');
-                                      }
-                                    } catch (error) {
-                                      console.error('Toggle status error:', error);
-                                      showToast(`Failed to update ${currentPage.slice(0, -1)} status`, 'error');
-                                    }
-                                  }}
-                                  className={`flex-1 py-2 px-3 rounded-lg text-sm ${
-                                    (user.isActive !== undefined ? user.isActive : true)
-                                      ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' 
-                                      : 'bg-green-50 text-green-700 hover:bg-green-100'
-                                  }`}
-                                >
-                                  {(user.isActive !== undefined ? user.isActive : true) ? 'Deactivate' : 'Activate'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => {
-                                  const userType = currentPage.slice(0, -1);
-                                  setDeleteConfig({
-                                    type: 'user',
-                                    item: user,
-                                    userType: userType,
-                                    title: `Delete ${userType.charAt(0).toUpperCase() + userType.slice(1)}`,
-                                    message: `Are you sure you want to delete this ${userType}? This action cannot be undone.`,
-                                    itemName: user.name
-                                  });
-                                  setIsDeleteModalOpen(true);
-                                }}
-                                className="flex-1 py-2 px-3 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                  )}
-                </div>
-              </div>
-            )}
+                {/* Profile Settings Page */}
+                {currentPage === 'profile-settings' && (
+                  <ProfileSettings
+                    userType="admin"
+                    userData={adminProfile}
+                    onUpdate={handleProfileUpdate}
+                    onCancel={() => handleNavigate('dashboard')}
+                  />
+                )}
 
-            {/* Reports Page */}
-            {currentPage === 'reports' && (
-              <div className="card p-6 hover-animate reveal">
-                <h2 className="text-lg font-semibold mb-4">Quick Reports</h2>
-                <p className="text-gray-600 mb-4">Export summarized metrics as JSON.</p>
-                <button
-                  onClick={() => {
-                    try {
-                      exportDashboardSummary({
-                        statistics: {
-                          totalProducts: products.length,
-                          totalOrders: orders.length,
-                          totalSellers: sellers.length,
-                          totalRiders: riders.length,
-                          totalCustomers: customers.length,
-                          totalSales: totalSales,
-                          lowStockProducts: lowStockProducts.length,
-                          pendingOrders: pendingOrders,
-                          activeDeliveries: activeDeliveries
-                        },
-                        products,
-                        orders,
-                        sellers,
-                        riders,
-                        customers,
-                        lowStockProducts,
-                        topProducts,
-                        orderStatusData,
-                        categoryData
-                      });
-                      showToast('Summary report exported to Excel!', 'success');
-                    } catch (error) {
-                      console.error('Export error:', error);
-                      showToast('Failed to export summary', 'error');
-                    }
-                  }}
-                  className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white py-2 px-4 rounded-lg btn-shine"
-                >
-                  📊 Download Excel Report
-                </button>
-              </div>
-            )}
-
-            {/* Profile Settings Page */}
-            {currentPage === 'profile-settings' && (
-              <ProfileSettings
-                userType="admin"
-                userData={adminProfile}
-                onUpdate={handleProfileUpdate}
-                onCancel={() => handleNavigate('dashboard')}
-              />
-            )}
-
-            {/* Account Settings Page */}
-            {currentPage === 'account-settings' && (
-              <AccountSettings
-                userType="admin"
-                userData={adminProfile}
-                onUpdateEmail={handleEmailUpdate}
-                onUpdatePhone={handlePhoneUpdate}
-                onUpdatePassword={handlePasswordUpdate}
-                onCancel={() => handleNavigate('dashboard')}
-              />
-            )}
+                {/* Account Settings Page */}
+                {currentPage === 'account-settings' && (
+                  <AccountSettings
+                    userType="admin"
+                    userData={adminProfile}
+                    onUpdateEmail={handleEmailUpdate}
+                    onUpdatePhone={handlePhoneUpdate}
+                    onUpdatePassword={handlePasswordUpdate}
+                    onCancel={() => handleNavigate('dashboard')}
+                  />
+                )}
               </>
             )}
 
@@ -2201,7 +2407,7 @@ const AdminDashboard = () => {
                       <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
                         {currentUserType.charAt(0).toUpperCase() + currentUserType.slice(1)}
                       </span>
-                       <button
+                      <button
                         onClick={async () => {
                           try {
                             const currentStatus = editedUserData.isActive !== undefined ? editedUserData.isActive : true;
@@ -2211,16 +2417,16 @@ const AdminDashboard = () => {
                               'seller': 'sellers',
                               'rider': 'riders'
                             };
-                            
+
                             // Call API to toggle status
                             const response = await toggleUserStatus(userTypeMap[currentUserType], editedUserData.id, newStatus);
-                            
+
                             if (response.success) {
                               // Update the edited data
                               const updatedData = { ...editedUserData, isActive: newStatus };
                               setEditedUserData(updatedData);
                               setEditingItem(updatedData);
-                              
+
                               // Refresh the data from server to ensure consistency
                               let refreshData;
                               if (currentUserType === 'rider') {
@@ -2239,7 +2445,7 @@ const AdminDashboard = () => {
                                   setCustomers(refreshData.customers);
                                 }
                               }
-                              
+
                               const userTypeName = currentUserType.charAt(0).toUpperCase() + currentUserType.slice(1);
                               showToast(`${userTypeName} ${newStatus ? 'activated' : 'deactivated'} successfully!`, 'success');
                             }
@@ -2248,15 +2454,13 @@ const AdminDashboard = () => {
                             showToast(`Failed to update ${currentUserType} status`, 'error');
                           }
                         }}
-                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
-                          (editedUserData.isActive !== undefined ? editedUserData.isActive : true)
-                            ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${(editedUserData.isActive !== undefined ? editedUserData.isActive : true)
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
                             : 'bg-red-100 text-red-800 hover:bg-red-200'
-                        }`}
+                          }`}
                       >
-                        <span className={`w-2 h-2 rounded-full ${
-                          (editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'bg-green-500' : 'bg-red-500'
-                        }`}></span>
+                        <span className={`w-2 h-2 rounded-full ${(editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'bg-green-500' : 'bg-red-500'
+                          }`}></span>
                         {(editedUserData.isActive !== undefined ? editedUserData.isActive : true) ? 'Active' : 'Inactive'}
                       </button>
                     </div>
@@ -2299,9 +2503,9 @@ const AdminDashboard = () => {
                       onChange={(value) => setEditedUserData({ ...editedUserData, address: value })}
                       onSelectAddress={(addressData) => {
                         // Store the full address string and optionally the detailed data
-                        setEditedUserData({ 
-                          ...editedUserData, 
-                          address: addressData.street 
+                        setEditedUserData({
+                          ...editedUserData,
+                          address: addressData.street
                             ? `${addressData.street}, ${addressData.barangay ? addressData.barangay + ', ' : ''}${addressData.city}, ${addressData.province}`
                             : editedUserData.address
                         });
@@ -2331,10 +2535,10 @@ const AdminDashboard = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Registered On</label>
                       <input
                         type="text"
-                        value={new Date(editedUserData.createdAt).toLocaleDateString('en-US', { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric' 
+                        value={new Date(editedUserData.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
                         })}
                         readOnly
                         className="w-full px-3 py-2 rounded-xl border bg-gray-50 cursor-not-allowed"
@@ -2426,7 +2630,7 @@ const AdminDashboard = () => {
                     onClick={async () => {
                       try {
                         setIsSavingUser(true);
-                        
+
                         // Prepare update data
                         const updateData = {
                           name: editedUserData.name || editedUserData.fullName,
@@ -2449,21 +2653,21 @@ const AdminDashboard = () => {
                         if (currentUserType === 'customer') {
                           response = await updateCustomer(editedUserData.id, updateData);
                           if (response.success) {
-                            setCustomers(customers.map(c => 
+                            setCustomers(customers.map(c =>
                               c.id === editedUserData.id ? { ...c, ...editedUserData } : c
                             ));
                           }
                         } else if (currentUserType === 'seller') {
                           response = await updateSeller(editedUserData.id, updateData);
                           if (response.success) {
-                            setSellers(sellers.map(s => 
+                            setSellers(sellers.map(s =>
                               s.id === editedUserData.id ? { ...s, ...editedUserData } : s
                             ));
                           }
                         } else if (currentUserType === 'rider') {
                           response = await updateRider(editedUserData.id, updateData);
                           if (response.success) {
-                            setRiders(riders.map(r => 
+                            setRiders(riders.map(r =>
                               r.id === editedUserData.id ? { ...r, ...editedUserData } : r
                             ));
                           }
@@ -2874,9 +3078,9 @@ const AdminDashboard = () => {
                       ))}
                     </div>
                   ) : (
-                    <img 
-                      src={selectedOrderForTracking.proofOfDelivery} 
-                      alt="Proof of delivery" 
+                    <img
+                      src={selectedOrderForTracking.proofOfDelivery}
+                      alt="Proof of delivery"
                       className="w-full max-h-64 object-contain rounded-lg border"
                     />
                   )}
@@ -2913,6 +3117,21 @@ const AdminDashboard = () => {
         itemType={bulkActionType}
         onBulkAction={handleBulkAction}
       />
+
+      {/* User Approval Modal */}
+      {isApprovalModalOpen && selectedUserForApproval && (
+        <UserApprovalModal
+          user={selectedUserForApproval}
+          userType={approvalUserType}
+          onApprove={(userId) => handleApproveUser(userId, approvalUserType)}
+          onDecline={(userId, reason) => handleDeclineUser(userId, reason, approvalUserType)}
+          onClose={() => {
+            setIsApprovalModalOpen(false);
+            setSelectedUserForApproval(null);
+            setApprovalUserType('');
+          }}
+        />
+      )}
     </div>
   );
 };

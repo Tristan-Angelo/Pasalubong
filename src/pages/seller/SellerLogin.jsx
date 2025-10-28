@@ -107,9 +107,7 @@ const SellerLogin = () => {
         return;
       }
 
-      setShowSuccess(true);
-
-      // Store login state, user data, and token
+      // Store login state, user data, and token first
       const userData = JSON.stringify(response.user);
       const token = response.token;
       
@@ -125,7 +123,31 @@ const SellerLogin = () => {
         sessionStorage.setItem('seller_token', token);
       }
 
-      // Navigate to dashboard after delay
+      // Check approval status and redirect accordingly
+      const approvalStatus = response.approvalStatus || 'pending';
+      const hasUploadedIds = response.user.validIdFront && response.user.validIdBack;
+
+      if (approvalStatus === 'declined') {
+        setError('Your account verification was declined. Please re-upload your valid ID.');
+        setTimeout(() => {
+          navigate('/seller/upload-valid-id');
+        }, 2000);
+        return;
+      }
+
+      if (approvalStatus === 'pending') {
+        if (!hasUploadedIds) {
+          // Need to upload valid ID
+          navigate('/seller/upload-valid-id');
+        } else {
+          // Already uploaded, waiting for approval
+          navigate('/seller/waiting-approval');
+        }
+        return;
+      }
+
+      // Approved - go to dashboard
+      setShowSuccess(true);
       setTimeout(() => {
         navigate('/seller/dashboard');
       }, 1500);

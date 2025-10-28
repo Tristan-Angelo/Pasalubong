@@ -5,13 +5,88 @@ import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import BuyerOrder from '../../models/BuyerOrder.js';
 import Delivery from '../../models/Delivery.js';
-import upload from '../../config/upload.js';
+import upload, { validIdUpload } from '../../config/upload.js';
 import { getUserNotifications, getUnreadCount, markAsRead, markAllAsRead, deleteNotification, notifyOrderStatusChange, notifyLowStock, notifyDeliveryAssigned } from '../../utils/notificationService.js';
 import cache from '../../utils/cache.js';
 
 const router = Router();
 
-// All routes require authentication
+// ============= VALID ID UPLOAD ROUTES (No approval required) =============
+
+// Upload valid ID images
+router.post('/upload-valid-id', authenticateSeller, validIdUpload.fields([
+  { name: 'front', maxCount: 1 },
+  { name: 'back', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    if (!req.files || !req.files.front || !req.files.back) {
+      return res.status(400).json({
+        error: 'Missing files',
+        message: 'Please upload both front and back images of your valid ID'
+      });
+    }
+
+    const seller = await Seller.findById(req.sellerId);
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'Seller account not found'
+      });
+    }
+
+    // Store file paths
+    const frontPath = `/uploads/valid_ids/${req.files.front[0].filename}`;
+    const backPath = `/uploads/valid_ids/${req.files.back[0].filename}`;
+
+    seller.validIdFront = frontPath;
+    seller.validIdBack = backPath;
+    seller.approvalStatus = 'pending';
+    await seller.save();
+
+    res.json({
+      success: true,
+      message: 'Valid ID uploaded successfully. Your account is pending admin approval.',
+      validIdFront: frontPath,
+      validIdBack: backPath
+    });
+  } catch (error) {
+    console.error('Upload valid ID error:', error);
+    res.status(500).json({
+      error: 'Upload failed',
+      message: error.message || 'An error occurred while uploading valid ID'
+    });
+  }
+});
+
+// Get approval status
+router.get('/approval-status', authenticateSeller, async (req, res) => {
+  try {
+    const seller = await Seller.findById(req.sellerId).select('approvalStatus isApproved validIdFront validIdBack approvalDate');
+    
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'Seller account not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      approvalStatus: seller.approvalStatus,
+      isApproved: seller.isApproved,
+      hasUploadedIds: !!(seller.validIdFront && seller.validIdBack),
+      approvalDate: seller.approvalDate
+    });
+  } catch (error) {
+    console.error('Get approval status error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch status',
+      message: 'An error occurred while fetching approval status'
+    });
+  }
+});
+
+// All other routes require authentication AND approval
 router.use(authenticateSeller);
 
 // ============= NOTIFICATION ROUTES =============

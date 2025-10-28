@@ -90,6 +90,27 @@ const sellerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  validIdFront: {
+    type: String,
+    default: null
+  },
+  validIdBack: {
+    type: String,
+    default: null
+  },
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'declined'],
+    default: 'pending'
+  },
+  approvalDate: {
+    type: Date,
+    default: null
+  },
+  approvedBy: {
+    type: String,
+    default: null
+  },
   isActive: {
     type: Boolean,
     default: true

@@ -111,6 +111,173 @@ router.delete('/notifications/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+// ============= APPROVAL MANAGEMENT ROUTES =============
+
+// Get pending approvals (sellers and delivery persons)
+router.get('/pending-approvals', authenticateAdmin, async (req, res) => {
+  try {
+    const pendingSellers = await Seller.find({ 
+      approvalStatus: 'pending',
+      validIdFront: { $ne: null },
+      validIdBack: { $ne: null }
+    })
+    .select('businessName ownerName email phone businessType region province city barangay validIdFront validIdBack createdAt')
+    .lean();
+
+    const pendingDeliveries = await Delivery.find({ 
+      approvalStatus: 'pending',
+      validIdFront: { $ne: null },
+      validIdBack: { $ne: null }
+    })
+    .select('fullname email phone vehicleType vehiclePlate licenseNumber region province city barangay validIdFront validIdBack createdAt')
+    .lean();
+
+    res.json({
+      success: true,
+      pendingSellers: pendingSellers.map(s => ({ ...s, id: s._id })),
+      pendingDeliveries: pendingDeliveries.map(d => ({ ...d, id: d._id }))
+    });
+  } catch (error) {
+    console.error('Get pending approvals error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch pending approvals',
+      message: 'An error occurred while fetching pending approvals'
+    });
+  }
+});
+
+// Approve seller
+router.put('/approve-seller/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const seller = await Seller.findById(id);
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'Seller account not found'
+      });
+    }
+
+    seller.approvalStatus = 'approved';
+    seller.isApproved = true;
+    seller.approvalDate = new Date();
+    seller.approvedBy = req.adminId;
+    await seller.save();
+
+    res.json({
+      success: true,
+      message: 'Seller approved successfully'
+    });
+  } catch (error) {
+    console.error('Approve seller error:', error);
+    res.status(500).json({
+      error: 'Failed to approve seller',
+      message: 'An error occurred while approving seller'
+    });
+  }
+});
+
+// Decline seller
+router.put('/decline-seller/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    
+    const seller = await Seller.findById(id);
+    if (!seller) {
+      return res.status(404).json({
+        error: 'Seller not found',
+        message: 'Seller account not found'
+      });
+    }
+
+    seller.approvalStatus = 'declined';
+    seller.isApproved = false;
+    seller.approvalDate = new Date();
+    seller.approvedBy = req.adminId;
+    // Optionally store decline reason
+    await seller.save();
+
+    res.json({
+      success: true,
+      message: 'Seller declined successfully'
+    });
+  } catch (error) {
+    console.error('Decline seller error:', error);
+    res.status(500).json({
+      error: 'Failed to decline seller',
+      message: 'An error occurred while declining seller'
+    });
+  }
+});
+
+// Approve delivery person
+router.put('/approve-delivery/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const delivery = await Delivery.findById(id);
+    if (!delivery) {
+      return res.status(404).json({
+        error: 'Delivery person not found',
+        message: 'Delivery account not found'
+      });
+    }
+
+    delivery.approvalStatus = 'approved';
+    delivery.isApproved = true;
+    delivery.approvalDate = new Date();
+    delivery.approvedBy = req.adminId;
+    await delivery.save();
+
+    res.json({
+      success: true,
+      message: 'Delivery person approved successfully'
+    });
+  } catch (error) {
+    console.error('Approve delivery error:', error);
+    res.status(500).json({
+      error: 'Failed to approve delivery person',
+      message: 'An error occurred while approving delivery person'
+    });
+  }
+});
+
+// Decline delivery person
+router.put('/decline-delivery/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    
+    const delivery = await Delivery.findById(id);
+    if (!delivery) {
+      return res.status(404).json({
+        error: 'Delivery person not found',
+        message: 'Delivery account not found'
+      });
+    }
+
+    delivery.approvalStatus = 'declined';
+    delivery.isApproved = false;
+    delivery.approvalDate = new Date();
+    delivery.approvedBy = req.adminId;
+    // Optionally store decline reason
+    await delivery.save();
+
+    res.json({
+      success: true,
+      message: 'Delivery person declined successfully'
+    });
+  } catch (error) {
+    console.error('Decline delivery error:', error);
+    res.status(500).json({
+      error: 'Failed to decline delivery person',
+      message: 'An error occurred while declining delivery person'
+    });
+  }
+});
+
 // ============= ADMIN PROFILE ROUTES =============
 
 // Get admin profile
@@ -312,7 +479,8 @@ router.get('/customers', async (req, res) => {
 // Get all sellers
 router.get('/sellers', async (req, res) => {
   try {
-    const sellers = await Seller.find()
+    // Only fetch approved sellers (exclude pending and declined)
+    const sellers = await Seller.find({ approvalStatus: 'approved' })
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
       .sort({ createdAt: -1 })
       .limit(1000)
@@ -334,6 +502,7 @@ router.get('/sellers', async (req, res) => {
       barangay: seller.barangay,
       isEmailVerified: seller.isEmailVerified,
       isActive: seller.isActive,
+      approvalStatus: seller.approvalStatus,
       createdAt: seller.createdAt,
       image: seller.photo || `https://i.pravatar.cc/150?u=${seller.email}` // Use actual photo if available
     }));
@@ -354,7 +523,8 @@ router.get('/sellers', async (req, res) => {
 // Get all riders (delivery partners)
 router.get('/riders', async (req, res) => {
   try {
-    const riders = await Delivery.find()
+    // Only fetch approved riders (exclude pending and declined)
+    const riders = await Delivery.find({ approvalStatus: 'approved' })
       .select('-password -verificationToken -resetPasswordToken -resetPasswordCode -resetPasswordExpires')
       .sort({ createdAt: -1 })
       .limit(1000)
@@ -378,6 +548,7 @@ router.get('/riders', async (req, res) => {
       isEmailVerified: rider.isEmailVerified,
       isAvailable: rider.isAvailable,
       isActive: rider.isActive,
+      approvalStatus: rider.approvalStatus,
       createdAt: rider.createdAt,
       image: rider.photo || `https://i.pravatar.cc/150?u=${rider.email}` // Use actual photo if available
     }));

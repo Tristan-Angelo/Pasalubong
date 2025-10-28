@@ -45,6 +45,7 @@ const DashboardSidebar = ({ activePage, setActivePage, userType = 'buyer', cartC
       case 'admin':
         return [
           { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+          { id: 'pending-approvals', label: 'Pending Approvals', icon: '⏳' },
           { id: 'products', label: 'Products', icon: '🍪' },
           { id: 'orders', label: 'Orders', icon: '🧾' },
           { id: 'sellers', label: 'Sellers', icon: '🏪' },

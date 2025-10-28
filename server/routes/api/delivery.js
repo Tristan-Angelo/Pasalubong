@@ -8,10 +8,86 @@ import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import { generateRouteData } from '../../utils/geocoding.js';
 import { getUserNotifications, getUnreadCount, markAsRead, markAllAsRead, deleteNotification, createNotification } from '../../utils/notificationService.js';
+import { validIdUpload } from '../../config/upload.js';
 
 const router = Router();
 
-// All routes require authentication
+// ============= VALID ID UPLOAD ROUTES (No approval required) =============
+
+// Upload valid ID images
+router.post('/upload-valid-id', authenticateDelivery, validIdUpload.fields([
+  { name: 'front', maxCount: 1 },
+  { name: 'back', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    if (!req.files || !req.files.front || !req.files.back) {
+      return res.status(400).json({
+        error: 'Missing files',
+        message: 'Please upload both front and back images of your valid ID'
+      });
+    }
+
+    const delivery = await Delivery.findById(req.deliveryId);
+    if (!delivery) {
+      return res.status(404).json({
+        error: 'Delivery person not found',
+        message: 'Delivery account not found'
+      });
+    }
+
+    // Store file paths
+    const frontPath = `/uploads/valid_ids/${req.files.front[0].filename}`;
+    const backPath = `/uploads/valid_ids/${req.files.back[0].filename}`;
+
+    delivery.validIdFront = frontPath;
+    delivery.validIdBack = backPath;
+    delivery.approvalStatus = 'pending';
+    await delivery.save();
+
+    res.json({
+      success: true,
+      message: 'Valid ID uploaded successfully. Your account is pending admin approval.',
+      validIdFront: frontPath,
+      validIdBack: backPath
+    });
+  } catch (error) {
+    console.error('Upload valid ID error:', error);
+    res.status(500).json({
+      error: 'Upload failed',
+      message: error.message || 'An error occurred while uploading valid ID'
+    });
+  }
+});
+
+// Get approval status
+router.get('/approval-status', authenticateDelivery, async (req, res) => {
+  try {
+    const delivery = await Delivery.findById(req.deliveryId).select('approvalStatus isApproved validIdFront validIdBack approvalDate');
+    
+    if (!delivery) {
+      return res.status(404).json({
+        error: 'Delivery person not found',
+        message: 'Delivery account not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      approvalStatus: delivery.approvalStatus,
+      isApproved: delivery.isApproved,
+      hasUploadedIds: !!(delivery.validIdFront && delivery.validIdBack),
+      approvalDate: delivery.approvalDate
+    });
+  } catch (error) {
+    console.error('Get approval status error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch status',
+      message: 'An error occurred while fetching approval status'
+    });
+  }
+});
+
+// All other routes require authentication AND approval
 router.use(authenticateDelivery);
 
 // ============= NOTIFICATION ROUTES =============
