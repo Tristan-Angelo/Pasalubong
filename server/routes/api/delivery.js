@@ -195,9 +195,15 @@ router.get('/profile', async (req, res) => {
   try {
     const delivery = await Delivery.findById(req.deliveryId).select('-password -verificationToken -resetPasswordToken -resetPasswordCode').lean();
 
+    // Transform to ensure fullName is available (map fullname to fullName)
+    const profile = {
+      ...delivery,
+      fullName: delivery.fullname || delivery.fullName
+    };
+
     res.json({
       success: true,
-      profile: delivery
+      profile: profile
     });
   } catch (error) {
     console.error('Get delivery profile error:', error);
@@ -211,7 +217,7 @@ router.get('/profile', async (req, res) => {
 // Update delivery profile
 router.put('/profile', async (req, res) => {
   try {
-    const { fullname, phone, vehicleType, vehiclePlate, serviceArea, photo, isAvailable } = req.body;
+    const { fullname, fullName, phone, vehicleType, vehiclePlate, serviceArea, photo, isAvailable } = req.body;
 
     const delivery = await Delivery.findById(req.deliveryId);
     if (!delivery) {
@@ -221,8 +227,8 @@ router.put('/profile', async (req, res) => {
       });
     }
 
-    // Update fields
-    if (fullname) delivery.fullname = fullname;
+    // Update fields - handle both fullname and fullName
+    if (fullname || fullName) delivery.fullname = fullname || fullName;
     if (phone) delivery.phone = phone;
     if (vehicleType) delivery.vehicleType = vehicleType;
     if (vehiclePlate) delivery.vehiclePlate = vehiclePlate;

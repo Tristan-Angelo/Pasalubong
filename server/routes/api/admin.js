@@ -536,7 +536,7 @@ router.get('/riders', async (req, res) => {
     // Transform data to match frontend format
     const transformedRiders = riders.map(rider => ({
       id: rider._id.toString(),
-      name: rider.fullName,
+      name: rider.fullname || rider.fullName,
       email: rider.email,
       phone: rider.phone,
       address: `${rider.barangay}, ${rider.city}, ${rider.province}`,
@@ -775,6 +775,16 @@ router.put('/riders/:id', async (req, res) => {
     delete updateData.password;
     delete updateData.verificationToken;
     delete updateData.resetPasswordToken;
+
+    // Handle both name and fullName fields - map to fullname
+    if (updateData.name) {
+      updateData.fullname = updateData.name;
+      delete updateData.name;
+    }
+    if (updateData.fullName) {
+      updateData.fullname = updateData.fullName;
+      delete updateData.fullName;
+    }
 
     const rider = await Delivery.findByIdAndUpdate(
       id,
