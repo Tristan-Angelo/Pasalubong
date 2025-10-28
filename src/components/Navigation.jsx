@@ -22,12 +22,59 @@ const Navigation = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const smoothScrollTo = (targetPosition) => {
+    const duration = 1000; // 1 second
+    const start = window.pageYOffset;
+    const distance = targetPosition - start;
+    const startTime = performance.now();
+
+    const animateScroll = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smooth animation (easeInOutCubic)
+      const easeInOutCubic = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      
+      window.scrollTo(0, start + distance * easeInOutCubic);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      }
+    };
+
+    requestAnimationFrame(animateScroll);
+  };
+
   const handleNavClick = (path) => {
     if (path.startsWith('#')) {
       // Handle anchor links
       const element = document.querySelector(path);
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
+        const targetPosition = element.offsetTop - 80; // Offset for fixed navbar
+        smoothScrollTo(targetPosition);
+      }
+    } else if (path.startsWith('/#')) {
+      // Handle home page anchor links from other pages
+      const hash = path.substring(1); // Remove the leading '/'
+      if (window.location.pathname === '/') {
+        // Already on home page, just scroll
+        const element = document.querySelector(hash);
+        if (element) {
+          const targetPosition = element.offsetTop - 80;
+          smoothScrollTo(targetPosition);
+        }
+      } else {
+        // Navigate to home page first, then scroll
+        navigate('/');
+        setTimeout(() => {
+          const element = document.querySelector(hash);
+          if (element) {
+            const targetPosition = element.offsetTop - 80;
+            smoothScrollTo(targetPosition);
+          }
+        }, 100);
       }
     } else {
       navigate(path);
