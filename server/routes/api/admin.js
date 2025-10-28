@@ -460,7 +460,7 @@ router.get('/customers', async (req, res) => {
       isEmailVerified: customer.isEmailVerified,
       isActive: customer.isActive,
       createdAt: customer.createdAt,
-      image: customer.photo || `https://i.pravatar.cc/150?u=${customer.email}` // Use actual photo if available
+      image: customer.photo || null // Use actual photo if available, null otherwise
     }));
 
     res.json({
@@ -504,7 +504,7 @@ router.get('/sellers', async (req, res) => {
       isActive: seller.isActive,
       approvalStatus: seller.approvalStatus,
       createdAt: seller.createdAt,
-      image: seller.photo || `https://i.pravatar.cc/150?u=${seller.email}` // Use actual photo if available
+      image: seller.photo || null // Use actual photo if available, null otherwise
     }));
 
     res.json({
@@ -550,7 +550,7 @@ router.get('/riders', async (req, res) => {
       isActive: rider.isActive,
       approvalStatus: rider.approvalStatus,
       createdAt: rider.createdAt,
-      image: rider.photo || `https://i.pravatar.cc/150?u=${rider.email}` // Use actual photo if available
+      image: rider.photo || null // Use actual photo if available, null otherwise
     }));
 
     res.json({
