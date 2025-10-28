@@ -38,47 +38,54 @@ const Navigation = () => {
   return (
     <nav className="sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-white/60">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        <button 
-          onClick={() => handleNavClick('/')} 
-          className="text-xl md:text-2xl font-extrabold tracking-tight gradient-text"
+        <button
+          onClick={() => handleNavClick('/')}
+          className="flex items-center gap-2"
         >
-          Pasalubong
+          <img
+            src="/PasalubongLogo.svg"
+            alt="Pasalubong Logo"
+            className="h-6 w-6 md:h-8 md:w-8"
+          />
+          <span className="text-xl md:text-2xl font-extrabold tracking-tight gradient-text">
+            Pasalubong
+          </span>
         </button>
-        
+
         {/* Desktop Navigation - Hidden at 991px and below */}
         <div className="desktop-nav hidden items-center gap-6 text-sm">
-          <button 
-            onClick={() => handleNavClick('/#categories')} 
+          <button
+            onClick={() => handleNavClick('/#categories')}
             className="nav-link relative group font-medium text-slate-700 hover:text-rose-700"
-          > 
-            <span className="pb-1">Categories</span> 
+          >
+            <span className="pb-1">Categories</span>
             <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-gradient-to-r from-rose-500 to-amber-500 transition-all group-hover:w-full"></span>
           </button>
-          <button 
-            onClick={() => handleNavClick('/#featured')} 
+          <button
+            onClick={() => handleNavClick('/#featured')}
             className="nav-link relative group font-medium text-slate-700 hover:text-rose-700"
-          > 
-            <span className="pb-1">Featured</span> 
+          >
+            <span className="pb-1">Featured</span>
             <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-gradient-to-r from-rose-500 to-amber-500 transition-all group-hover:w-full"></span>
           </button>
-          <button 
-            onClick={() => handleNavClick('/#how-it-works')} 
+          <button
+            onClick={() => handleNavClick('/#how-it-works')}
             className="nav-link relative group font-medium text-slate-700 hover:text-rose-700"
-          > 
-            <span className="pb-1">How it Works</span> 
+          >
+            <span className="pb-1">How it Works</span>
             <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-gradient-to-r from-rose-500 to-amber-500 transition-all group-hover:w-full"></span>
           </button>
-          <button 
-            onClick={() => handleNavClick('/#testimonials')} 
+          <button
+            onClick={() => handleNavClick('/#testimonials')}
             className="nav-link relative group font-medium text-slate-700 hover:text-rose-700"
-          > 
-            <span className="pb-1">Testimonials</span> 
+          >
+            <span className="pb-1">Testimonials</span>
             <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-gradient-to-r from-rose-500 to-amber-500 transition-all group-hover:w-full"></span>
           </button>
-          
+
           {/* Login dropdown */}
           <div className="relative">
-            <button 
+            <button
               onClick={() => {
                 setIsLoginMenuOpen(!isLoginMenuOpen);
                 setIsRegisterMenuOpen(false);
@@ -87,34 +94,34 @@ const Navigation = () => {
             >
               Login
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd"/>
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
               </svg>
             </button>
             <div className={`absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-professional-lg border border-gray-100 py-2 ${isLoginMenuOpen ? 'block' : 'hidden'}`}>
-              <button 
-                onClick={() => handleNavClick('/buyer/login')} 
+              <button
+                onClick={() => handleNavClick('/buyer/login')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 👤 Buyer
               </button>
-              <button 
-                onClick={() => handleNavClick('/delivery/login')} 
+              <button
+                onClick={() => handleNavClick('/delivery/login')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 🚴 Rider
               </button>
-              <button 
-                onClick={() => handleNavClick('/seller/login')} 
+              <button
+                onClick={() => handleNavClick('/seller/login')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 🏪 Seller
               </button>
             </div>
           </div>
-          
+
           {/* Register dropdown */}
           <div className="relative">
-            <button 
+            <button
               onClick={() => {
                 setIsRegisterMenuOpen(!isRegisterMenuOpen);
                 setIsLoginMenuOpen(false);
@@ -123,24 +130,24 @@ const Navigation = () => {
             >
               Register
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd"/>
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.085l3.71-3.856a.75.75 0 1 1 1.08 1.04l-4.24 4.41a.75.75 0 0 1-1.08 0l-4.24-4.41a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
               </svg>
             </button>
             <div className={`absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-professional-lg border border-gray-100 py-2 ${isRegisterMenuOpen ? 'block' : 'hidden'}`}>
-              <button 
-                onClick={() => handleNavClick('/buyer/register')} 
+              <button
+                onClick={() => handleNavClick('/buyer/register')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 👤 Buyer Account
               </button>
-              <button 
-                onClick={() => handleNavClick('/delivery/register')} 
+              <button
+                onClick={() => handleNavClick('/delivery/register')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 🚴 Rider Account
               </button>
-              <button 
-                onClick={() => handleNavClick('/seller/register')} 
+              <button
+                onClick={() => handleNavClick('/seller/register')}
                 className="block w-full text-left px-4 py-2.5 text-sm hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
                 🏪 Seller Account
@@ -148,11 +155,11 @@ const Navigation = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Mobile Toggle Button - Shown at 991px and below */}
-        <button 
+        <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="mobile-nav-toggle hidden p-2 rounded hover:bg-gray-100" 
+          className="mobile-nav-toggle hidden p-2 rounded hover:bg-gray-100"
           aria-label="Toggle navigation"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -160,15 +167,15 @@ const Navigation = () => {
           </svg>
         </button>
       </div>
-      
+
       {/* Mobile Menu - Shown at 991px and below when toggled */}
       <div className={`mobile-nav-menu px-6 pb-4 space-y-2 text-sm ${isMobileMenuOpen ? 'block' : 'hidden'}`}>
         <button onClick={() => handleNavClick('/#categories')} className="block w-full text-left py-2 border-b">Categories</button>
         <button onClick={() => handleNavClick('/#featured')} className="block w-full text-left py-2 border-b">Featured</button>
         <button onClick={() => handleNavClick('/#how-it-works')} className="block w-full text-left py-2 border-b">How it Works</button>
         <button onClick={() => handleNavClick('/#testimonials')} className="block w-full text-left py-2 border-b">Testimonials</button>
-        
-        <button 
+
+        <button
           onClick={() => {
             setIsMobileRegisterOpen(!isMobileRegisterOpen);
             setIsMobileLoginOpen(false);
@@ -182,8 +189,8 @@ const Navigation = () => {
           <button onClick={() => handleNavClick('/delivery/register')} className="block w-full text-left py-1">Delivery</button>
           <button onClick={() => handleNavClick('/seller/register')} className="block w-full text-left py-1">Seller</button>
         </div>
-        
-        <button 
+
+        <button
           onClick={() => {
             setIsMobileLoginOpen(!isMobileLoginOpen);
             setIsMobileRegisterOpen(false);

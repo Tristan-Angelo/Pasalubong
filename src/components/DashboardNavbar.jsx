@@ -341,9 +341,16 @@ const DashboardNavbar = ({ userType = 'buyer', onLogout, onNavigate, adminPhoto 
             </svg>
           </button>
 
-          <h1 className="text-xl md:text-2xl font-extrabold tracking-tight gradient-text">
-            Pasalubong
-          </h1>
+          <div className="flex items-center gap-2">
+            <img
+              src="/PasalubongLogo.svg"
+              alt="Pasalubong Logo"
+              className="h-6 w-6 md:h-8 md:w-8"
+            />
+            <h1 className="text-xl md:text-2xl font-extrabold tracking-tight gradient-text">
+              Pasalubong
+            </h1>
+          </div>
         </div>
 
         {/* Right side - User menu and notifications */}

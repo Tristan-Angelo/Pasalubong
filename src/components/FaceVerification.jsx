@@ -244,15 +244,24 @@ const FaceVerification = ({ onSuccess, onCancel, onFail }) => {
                   </div>
                 )}
 
-                {/* Face detection status indicator - only show when face is detected */}
-                {!isLoading && faceDetected && (
+                {/* Face detection status indicator */}
+                {!isLoading && !isVerifying && (
                   <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20">
-                    <div className="px-4 py-2 rounded-full backdrop-blur-md transition-all duration-300 bg-green-500/90 text-white shadow-lg shadow-green-500/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                        <span className="text-sm font-medium">Face Detected</span>
+                    {faceDetected ? (
+                      <div className="px-4 py-2 rounded-full backdrop-blur-md transition-all duration-300 bg-green-500/90 text-white shadow-lg shadow-green-500/50 animate-slideDown">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                          <span className="text-sm font-medium">Face Detected</span>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="px-4 py-2 rounded-full backdrop-blur-md transition-all duration-300 bg-blue-500/90 text-white shadow-lg shadow-blue-500/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                          <span className="text-sm font-medium">Detecting Face... Stay Still</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
