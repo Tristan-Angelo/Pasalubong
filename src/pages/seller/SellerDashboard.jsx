@@ -1255,7 +1255,6 @@ const SellerDashboard = () => {
             >
               <option value="">Select Type</option>
               <option value="Food & Beverages">Food & Beverages</option>
-              <option value="Handicrafts">Handicrafts</option>
               <option value="Agricultural Products">Agricultural Products</option>
               <option value="Local Delicacies">Local Delicacies</option>
             </select>

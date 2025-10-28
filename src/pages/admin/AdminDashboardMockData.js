@@ -41,13 +41,13 @@ export const mockRootProps = {
       { 
         id: 3, 
         sku: 'SKU-1003', 
-        name: 'Barong Tagalog', 
-        category: 'Clothing', 
-        price: 1500, 
-        stock: 3, 
-        seller: 'Traditional Wear Co.', 
-        description: 'Traditional Filipino formal shirt', 
-        image: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=300' 
+        name: 'Coconut Candy', 
+        category: 'Sweets', 
+        price: 150, 
+        stock: 30, 
+        seller: 'Tropical Treats', 
+        description: 'Sweet coconut candy', 
+        image: 'https://images.unsplash.com/photo-1582058091505-f87a2e55a40f?w=300' 
       }
     ],
     orders: [

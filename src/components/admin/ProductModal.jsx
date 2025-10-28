@@ -299,8 +299,6 @@ const ProductModal = ({ isOpen, onClose, onSave, editingProduct, userType = 'adm
                 <option value="">Select Category</option>
                 <option value="Sweets">Sweets</option>
                 <option value="Snacks">Snacks</option>
-                <option value="Clothing">Clothing</option>
-                <option value="Handicrafts">Handicrafts</option>
                 <option value="Beverages">Beverages</option>
                 <option value="Other">Other</option>
               </select>

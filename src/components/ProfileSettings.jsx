@@ -279,8 +279,6 @@ const ProfileSettings = ({ userType, userData, onUpdate, onCancel }) => {
           >
             <option value="">Select Business Type</option>
             <option value="Food & Beverages">Food & Beverages</option>
-            <option value="Handicrafts">Handicrafts</option>
-            <option value="Clothing & Textiles">Clothing & Textiles</option>
             <option value="Souvenirs & Gifts">Souvenirs & Gifts</option>
             <option value="Agricultural Products">Agricultural Products</option>
             <option value="Other">Other</option>

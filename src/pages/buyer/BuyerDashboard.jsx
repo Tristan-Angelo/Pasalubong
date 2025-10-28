@@ -764,8 +764,6 @@ const BuyerDashboard = () => {
             <option value="">All Categories</option>
             <option value="Sweets">Sweets</option>
             <option value="Snacks">Snacks</option>
-            <option value="Clothing">Clothing</option>
-            <option value="Handicrafts">Handicrafts</option>
             <option value="Beverages">Beverages</option>
             <option value="Other">Other</option>
           </select>

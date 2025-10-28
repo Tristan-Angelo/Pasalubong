@@ -31,7 +31,7 @@ const AllProductsPage = () => {
         const response = await getPublicCategories();
         if (response.success) {
           // Combine API categories with additional categories
-          const additionalCategories = ['Clothing', 'Handicrafts', 'Other'];
+          const additionalCategories = ['Other'];
           const apiCategories = response.categories || [];
           
           // Merge and remove duplicates (case-insensitive)
@@ -45,12 +45,12 @@ const AllProductsPage = () => {
           setCategories(allCategories);
         } else {
           // If API fails, use default categories
-          setCategories(['Clothing', 'Handicrafts', 'Other']);
+          setCategories(['Other']);
         }
       } catch (err) {
         console.error('Failed to fetch categories:', err);
         // Set default categories on error
-        setCategories(['Clothing', 'Handicrafts', 'Other']);
+        setCategories(['Other']);
       }
     };
     fetchCategories();

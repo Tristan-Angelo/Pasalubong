@@ -38,7 +38,7 @@ const sellerSchema = new mongoose.Schema({
   businessType: {
     type: String,
     required: [true, 'Business type is required'],
-    enum: ['Food & Beverages', 'Handicrafts', 'Agricultural Products', 'Local Delicacies', 'Other']
+    enum: ['Food & Beverages', 'Agricultural Products', 'Local Delicacies', 'Other']
   },
   region: {
     type: String,
