@@ -34,7 +34,7 @@ const SkeletonLoader = ({ variant = 'default', count = 1, className = '' }) => {
           </div>
         );
 
-      case 'table-row':
+      case 'table-row-card':
         return (
           <div className={`card p-4 animate-pulse ${className}`}>
             <div className="flex items-center justify-between">

@@ -1352,8 +1352,33 @@ const SellerDashboard = () => {
           )}
           {activePage === 'analytics' && (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <SkeletonLoader variant="chart" count={2} />
+              <div className="flex justify-between items-center mb-6">
+                <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+                <div className="h-10 bg-gray-200 rounded w-40 animate-pulse"></div>
+              </div>
+              <div className="space-y-6">
+                <SkeletonLoader variant="chart" count={1} />
+                <SkeletonLoader variant="chart" count={1} />
+                <div className="card p-6 animate-pulse">
+                  <div className="h-6 bg-gray-200 rounded w-48 mb-4"></div>
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                            <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                          </div>
+                        </div>
+                        <div className="text-right space-y-2">
+                          <div className="h-5 bg-gray-200 rounded w-20"></div>
+                          <div className="h-3 bg-gray-200 rounded w-16"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}

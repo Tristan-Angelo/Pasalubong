@@ -123,12 +123,14 @@ const useLazyDashboardData = (activePage, dataLoaders) => {
     return loadedSections.has(section);
   }, [loadedSections]);
 
-  // Check if section can be rendered (must be fully loaded and not loading anything else)
+  // Check if section can be rendered (must be fully loaded)
   const canRenderSection = useCallback((section) => {
     // Section must be fully loaded (in the loadedSections set)
-    // AND we must not be currently loading any section
-    return loadedSections.has(section) && !isLoading;
-  }, [isLoading, loadedSections]);
+    // Allow rendering even if another section is loading (for better UX)
+    const canRender = loadedSections.has(section);
+    console.log(`🎨 canRenderSection(${section}):`, canRender, 'loadedSections:', Array.from(loadedSections));
+    return canRender;
+  }, [loadedSections]);
 
   // Function to check if navigation is allowed
   const canNavigate = useCallback(() => {
