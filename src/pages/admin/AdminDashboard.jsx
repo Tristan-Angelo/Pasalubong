@@ -178,8 +178,24 @@ const AdminDashboard = () => {
 
       let allOrders = [];
 
+      // Process old orders from Order model
       if (ordersData.success) {
-        allOrders = [...ordersData.orders];
+        const oldOrders = ordersData.orders.map(order => ({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customer: order.customer,
+          amount: order.amount || 0,
+          status: order.status,
+          date: order.date || order.createdAt,
+          deliveryPerson: order.deliveryPerson || null,
+          deliveryStatus: order.deliveryStatus || null,
+          statusHistory: order.statusHistory || [],
+          proofOfDelivery: order.proofOfDelivery || null,
+          proofOfDeliveryImages: order.proofOfDeliveryImages || [],
+          deliveredAt: order.deliveredAt || null,
+          items: order.items || []
+        }));
+        allOrders = [...oldOrders];
       }
 
       // Update pagination info
@@ -187,31 +203,33 @@ const AdminDashboard = () => {
         setOrdersPagination(buyerOrdersData.pagination);
       }
 
-      // Merge buyer orders with old orders for comprehensive view
-      if (buyerOrdersData.success) {
+      // Process buyer orders from BuyerOrder model
+      if (buyerOrdersData.success && buyerOrdersData.orders) {
         const buyerOrders = buyerOrdersData.orders.map(order => ({
           id: order.id,
           orderNumber: order.orderNumber,
-          customer: order.customerName,
-          amount: order.total,
+          customer: order.customerName || 'Unknown',
+          amount: order.total || 0,
           status: order.status,
-          date: order.date,
-          deliveryPerson: order.deliveryPerson,
-          deliveryStatus: order.deliveryStatus,
-          statusHistory: order.statusHistory,
-          proofOfDelivery: order.proofOfDelivery,
-          proofOfDeliveryImages: order.proofOfDeliveryImages,
-          deliveredAt: order.deliveredAt,
-          items: order.items
+          date: order.date || order.createdAt,
+          deliveryPerson: order.deliveryPerson || null,
+          deliveryStatus: order.deliveryStatus || null,
+          statusHistory: order.statusHistory || [],
+          proofOfDelivery: order.proofOfDelivery || null,
+          proofOfDeliveryImages: order.proofOfDeliveryImages || [],
+          deliveredAt: order.deliveredAt || null,
+          items: order.items || []
         }));
+        // Put buyer orders first (they're more recent)
         allOrders = [...buyerOrders, ...allOrders];
       }
 
+      console.log('📦 Admin loaded orders:', allOrders.length, 'orders');
       setOrders(allOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
     }
-  }, []);
+  }, [ordersPagination.currentPage, ordersPagination.ordersPerPage]);
 
   const loadDeliveryPersonsData = useCallback(async () => {
     try {
@@ -620,7 +638,10 @@ const AdminDashboard = () => {
   };
 
   // Calculate statistics
-  const totalSales = orders.reduce((sum, order) => sum + (order.status === 'Completed' || order.status === 'Delivered' ? order.amount : 0), 0);
+  const totalSales = orders.reduce((sum, order) => {
+    const orderAmount = order.amount || 0;
+    return sum + (order.status === 'Completed' || order.status === 'Delivered' ? orderAmount : 0);
+  }, 0);
   const lowStockProducts = products.filter(p => p.stock <= 10);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
   const activeDeliveries = orders.filter(o => o.status === 'Out for Delivery' || o.deliveryStatus === 'In Transit').length;
@@ -657,8 +678,10 @@ const AdminDashboard = () => {
               revenue: 0
             };
           }
-          productSalesMap[productName].quantity += item.quantity || 0;
-          productSalesMap[productName].revenue += (item.price || 0) * (item.quantity || 0);
+          const quantity = item.quantity || 0;
+          const price = item.price || 0;
+          productSalesMap[productName].quantity += quantity;
+          productSalesMap[productName].revenue += price * quantity;
         }
       });
     }
@@ -1173,10 +1196,10 @@ const AdminDashboard = () => {
                               ₱{Object.values(productSalesMap).reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
                             </p>
                           </div>
-                          <div className="card p-4 text-center">
+                           <div className="card p-4 text-center">
                             <p className="text-sm text-gray-600 mb-1">Avg Order Value</p>
                             <p className="text-2xl font-bold text-purple-600">
-                              ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || o.total || 0), 0) / orders.length).toFixed(2) : '0'}
+                              ₱{orders.length > 0 ? (orders.reduce((sum, o) => sum + (o.amount || 0), 0) / orders.length).toFixed(2) : '0'}
                             </p>
                           </div>
                           <div className="card p-4 text-center">
@@ -1236,7 +1259,7 @@ const AdminDashboard = () => {
                                 )}
                               </div>
                               <div className="text-right">
-                                <p className="font-medium">₱{order.amount}</p>
+                                <p className="font-medium">₱{(order.amount || 0).toLocaleString()}</p>
                                 <span className={`chip ${getStatusColor(order.status)}`}>{order.status}</span>
                               </div>
                             </div>
