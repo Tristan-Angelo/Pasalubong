@@ -1311,7 +1311,7 @@ router.put('/buyer-orders/:orderId/assign-delivery', authenticateAdmin, async (r
 });
 
 // Get all orders (old system - keeping for backward compatibility)
-router.get('/orders', async (req, res) => {
+router.get('/orders', authenticateAdmin, async (req, res) => {
   try {
     const orders = await Order.find()
       .select('orderNumber customer customerId amount status date notes items shippingAddress paymentMethod createdAt')

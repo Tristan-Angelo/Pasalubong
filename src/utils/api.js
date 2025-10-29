@@ -370,39 +370,39 @@ export const deleteProduct = async (id) => {
 // ============= ORDER API =============
 
 export const getOrders = async () => {
-  return apiCall('/admin/orders', {
+  return adminApiCall('/admin/orders', {
     method: 'GET',
   });
 };
 
 export const getOrder = async (id) => {
-  return apiCall(`/admin/orders/${id}`, {
+  return adminApiCall(`/admin/orders/${id}`, {
     method: 'GET',
   });
 };
 
 export const createOrder = async (orderData) => {
-  return apiCall('/admin/orders', {
+  return adminApiCall('/admin/orders', {
     method: 'POST',
     body: JSON.stringify(orderData),
   });
 };
 
 export const updateOrder = async (id, orderData) => {
-  return apiCall(`/admin/orders/${id}`, {
+  return adminApiCall(`/admin/orders/${id}`, {
     method: 'PUT',
     body: JSON.stringify(orderData),
   });
 };
 
 export const deleteOrder = async (id) => {
-  return apiCall(`/admin/orders/${id}`, {
+  return adminApiCall(`/admin/orders/${id}`, {
     method: 'DELETE',
   });
 };
 
 export const updateOrderStatus = async (id, status) => {
-  return apiCall(`/admin/orders/${id}/status`, {
+  return adminApiCall(`/admin/orders/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });

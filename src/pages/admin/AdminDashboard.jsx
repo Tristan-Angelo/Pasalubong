@@ -173,58 +173,74 @@ const AdminDashboard = () => {
     try {
       const [ordersData, buyerOrdersData] = await Promise.all([
         getOrders(),
-        getAdminBuyerOrders(ordersPagination.currentPage, ordersPagination.ordersPerPage)
+        getAdminBuyerOrders(1, 1000) // Get all buyer orders for complete view
       ]);
 
       let allOrders = [];
+      const orderIds = new Set(); // Track unique order IDs to avoid duplicates
 
-      if (ordersData.success) {
-        const oldOrders = ordersData.orders.map(order => ({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          customer: order.customer,
-          amount: order.amount || 0,
-          status: order.status,
-          date: order.date || order.createdAt,
-          deliveryPerson: order.deliveryPerson || null,
-          deliveryStatus: order.deliveryStatus || null,
-          statusHistory: order.statusHistory || [],
-          proofOfDelivery: order.proofOfDelivery || null,
-          proofOfDeliveryImages: order.proofOfDeliveryImages || [],
-          deliveredAt: order.deliveredAt || null,
-          items: order.items || []
-        }));
-        allOrders = [...oldOrders];
+      // Process buyer orders first (new system - primary source)
+      if (buyerOrdersData.success && buyerOrdersData.orders) {
+        const buyerOrders = buyerOrdersData.orders.map(order => {
+          orderIds.add(order.id);
+          return {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            customer: order.customerName,
+            amount: order.total || 0,
+            status: order.status,
+            date: order.date,
+            deliveryPerson: order.deliveryPerson,
+            deliveryStatus: order.deliveryStatus,
+            statusHistory: order.statusHistory || [],
+            proofOfDelivery: order.proofOfDelivery || null,
+            proofOfDeliveryImages: order.proofOfDeliveryImages || [],
+            deliveredAt: order.deliveredAt || null,
+            items: order.items || [],
+            createdAt: order.date
+          };
+        });
+        allOrders = [...buyerOrders];
       }
 
-      // Update pagination info
-      if (buyerOrdersData.pagination) {
-        setOrdersPagination(buyerOrdersData.pagination);
+      // Add old orders that aren't duplicates
+      if (ordersData.success && ordersData.orders) {
+        const oldOrders = ordersData.orders
+          .filter(order => !orderIds.has(order.id)) // Avoid duplicates
+          .map(order => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            customer: order.customer,
+            amount: order.amount || 0,
+            status: order.status,
+            date: order.date || order.createdAt,
+            deliveryPerson: order.deliveryPerson || null,
+            deliveryStatus: order.deliveryStatus || null,
+            statusHistory: order.statusHistory || [],
+            proofOfDelivery: order.proofOfDelivery || null,
+            proofOfDeliveryImages: order.proofOfDeliveryImages || [],
+            deliveredAt: order.deliveredAt || null,
+            items: order.items || [],
+            createdAt: order.createdAt
+          }));
+        allOrders = [...allOrders, ...oldOrders];
       }
 
-      // Merge buyer orders with old orders for comprehensive view
-      if (buyerOrdersData.success) {
-        const buyerOrders = buyerOrdersData.orders.map(order => ({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          customer: order.customerName,
-          amount: order.total,
-          status: order.status,
-          date: order.date,
-          deliveryPerson: order.deliveryPerson,
-          deliveryStatus: order.deliveryStatus,
-          statusHistory: order.statusHistory,
-          proofOfDelivery: order.proofOfDelivery,
-          proofOfDeliveryImages: order.proofOfDeliveryImages,
-          deliveredAt: order.deliveredAt,
-          items: order.items
-        }));
-        allOrders = [...buyerOrders, ...allOrders];
-      }
+      // Sort by date (newest first)
+      allOrders.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
       setOrders(allOrders);
+      
+      // Update pagination based on total orders
+      setOrdersPagination({
+        currentPage: 1,
+        totalPages: Math.ceil(allOrders.length / 10),
+        totalOrders: allOrders.length,
+        ordersPerPage: 10
+      });
     } catch (error) {
       console.error('Error loading orders:', error);
+      showToast('Failed to load orders. Please try again.', 'error');
     }
   }, []);
 
@@ -405,10 +421,7 @@ const AdminDashboard = () => {
       try {
         switch (currentPage) {
           case 'orders':
-            const ordersData = await getOrders();
-            if (ordersData.success) {
-              setOrders(ordersData.orders);
-            }
+            await loadOrdersData();
             break;
           case 'products':
             const productsData = await getProducts();
@@ -436,22 +449,22 @@ const AdminDashboard = () => {
             break;
           case 'dashboard':
             // Refresh all data for dashboard
-            const [productsRefresh, ordersRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+            const [productsRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
               getProducts(),
-              getOrders(),
               getSellers(),
               getRiders(),
               getCustomers()
             ]);
             if (productsRefresh.success) setProducts(productsRefresh.products);
-            if (ordersRefresh.success) setOrders(ordersRefresh.orders);
             if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
             if (ridersRefresh.success) setRiders(ridersRefresh.riders);
             if (customersRefresh.success) setCustomers(customersRefresh.customers);
+            // Load orders separately to use the proper function
+            await loadOrdersData();
             break;
           case 'profile-settings':
           case 'account-settings':
-            await loadAdminProfile();
+            await loadProfileData();
             break;
           default:
             break;
@@ -465,34 +478,12 @@ const AdminDashboard = () => {
     if (currentPage !== 'dashboard' || document.hasFocus()) {
       refreshPageData();
     }
-  }, [currentPage]);
+  }, [currentPage, loadOrdersData, loadProfileData]);
 
   // Load admin profile on mount
   useEffect(() => {
-    loadAdminProfile();
-  }, []);
-
-  const loadAdminProfile = async () => {
-    try {
-      setIsLoadingProfile(true);
-      const response = await getAdminProfile();
-      if (response.success) {
-        setAdminProfile(response.profile);
-        if (response.profile.photo) {
-          setProfilePhotoPreview(response.profile.photo);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading admin profile:', error);
-      // If token is invalid, redirect to login
-      if (error.message.includes('token') || error.message.includes('Unauthorized')) {
-        localStorage.removeItem('admin_token');
-        navigate('/admin/login');
-      }
-    } finally {
-      setIsLoadingProfile(false);
-    }
-  };
+    loadProfileData();
+  }, [loadProfileData]);
 
   // Profile and account settings handlers
   const handleProfileUpdate = async (updatedData) => {
@@ -562,10 +553,7 @@ const AdminDashboard = () => {
         setSelectedOrderForDelivery(null);
         setSelectedDeliveryPersonId('');
         // Reload orders to reflect the assignment
-        const ordersData = await getOrders();
-        if (ordersData.success) {
-          setOrders(ordersData.orders);
-        }
+        await loadOrdersData();
       }
     } catch (error) {
       console.error('Error assigning delivery person:', error);
@@ -634,14 +622,21 @@ const AdminDashboard = () => {
     setIsApprovalModalOpen(true);
   };
 
-  // Calculate statistics
+  // Calculate statistics with improved accuracy
   const totalSales = orders.reduce((sum, order) => {
-    const orderAmount = order.amount || 0;
-    return sum + (order.status === 'Completed' || order.status === 'Delivered' ? orderAmount : 0);
+    const orderAmount = parseFloat(order.amount) || 0;
+    // Count completed, delivered, and paid orders
+    const isCompleted = ['Completed', 'Delivered', 'Paid'].includes(order.status);
+    return sum + (isCompleted ? orderAmount : 0);
   }, 0);
-  const lowStockProducts = products.filter(p => p.stock <= 10);
-  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
-  const activeDeliveries = orders.filter(o => o.status === 'Out for Delivery' || o.deliveryStatus === 'In Transit').length;
+  const lowStockProducts = products.filter(p => (p.stock || 0) <= 10);
+  const pendingOrders = orders.filter(o => ['Pending', 'Processing', 'Confirmed', 'Preparing'].includes(o.status)).length;
+  const activeDeliveries = orders.filter(o => 
+    o.status === 'Out for Delivery' || 
+    o.deliveryStatus === 'In Transit' || 
+    o.deliveryStatus === 'Assigned' ||
+    (o.deliveryPerson && !['Delivered', 'Completed', 'Cancelled'].includes(o.status))
+  ).length;
 
   // Calculate trends (mock data - in real app, compare with previous period)
   const salesTrend = { trend: 'up', value: '+12.5%' };
@@ -649,25 +644,26 @@ const AdminDashboard = () => {
   const productsTrend = { trend: 'neutral', value: '0%' };
   const usersTrend = { trend: 'up', value: '+5.2%' };
 
-  // Analytics data
+  // Analytics data with improved accuracy
   const orderStatusData = [
     { label: 'Pending', value: orders.filter(o => o.status === 'Pending').length },
     { label: 'Confirmed', value: orders.filter(o => o.status === 'Confirmed').length },
     { label: 'Preparing', value: orders.filter(o => o.status === 'Preparing').length },
     { label: 'Processing', value: orders.filter(o => o.status === 'Processing').length },
     { label: 'Out for Delivery', value: orders.filter(o => o.status === 'Out for Delivery').length },
-    { label: 'Delivered', value: orders.filter(o => o.status === 'Delivered' || o.status === 'Completed').length },
+    { label: 'Delivered', value: orders.filter(o => ['Delivered', 'Completed', 'Paid'].includes(o.status)).length },
     { label: 'Cancelled', value: orders.filter(o => o.status === 'Cancelled').length }
   ].filter(item => item.value > 0); // Only show statuses with orders
 
-  // Calculate top products based on actual sales from orders
+  // Calculate top products based on actual sales from orders (only completed orders)
   const productSalesMap = {};
   orders.forEach(order => {
-    if (order.items && Array.isArray(order.items)) {
+    // Only count completed/delivered orders for accurate sales data
+    const isCompleted = ['Completed', 'Delivered', 'Paid'].includes(order.status);
+    if (isCompleted && order.items && Array.isArray(order.items)) {
       order.items.forEach(item => {
-        const productId = item.productId || item.id;
-        const productName = item.name || item.productName;
-        if (productName) {
+        const productName = item.name || item.productName || 'Unknown Product';
+        if (productName && productName !== 'Unknown Product') {
           if (!productSalesMap[productName]) {
             productSalesMap[productName] = {
               name: productName,
@@ -675,8 +671,8 @@ const AdminDashboard = () => {
               revenue: 0
             };
           }
-          const quantity = item.quantity || 0;
-          const price = item.price || 0;
+          const quantity = parseInt(item.quantity) || 0;
+          const price = parseFloat(item.price) || 0;
           productSalesMap[productName].quantity += quantity;
           productSalesMap[productName].revenue += price * quantity;
         }
@@ -801,16 +797,12 @@ const AdminDashboard = () => {
       }
 
       // Refresh data
-      const refreshData = async () => {
-        if (bulkActionType === 'products') {
-          const productsData = await getProducts();
-          if (productsData.success) setProducts(productsData.products);
-        } else if (bulkActionType === 'orders') {
-          const ordersData = await getOrders();
-          if (ordersData.success) setOrders(ordersData.orders);
-        }
-      };
-      await refreshData();
+      if (bulkActionType === 'products') {
+        const productsData = await getProducts();
+        if (productsData.success) setProducts(productsData.products);
+      } else if (bulkActionType === 'orders') {
+        await loadOrdersData();
+      }
       setSelectedItems([]);
     } catch (error) {
       console.error('Bulk action error:', error);
@@ -1056,18 +1048,17 @@ const AdminDashboard = () => {
                       <button
                         onClick={async () => {
                           try {
-                            const [productsRefresh, ordersRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
+                            const [productsRefresh, sellersRefresh, ridersRefresh, customersRefresh] = await Promise.all([
                               getProducts(),
-                              getOrders(),
                               getSellers(),
                               getRiders(),
                               getCustomers()
                             ]);
                             if (productsRefresh.success) setProducts(productsRefresh.products);
-                            if (ordersRefresh.success) setOrders(ordersRefresh.orders);
                             if (sellersRefresh.success) setSellers(sellersRefresh.sellers);
                             if (ridersRefresh.success) setRiders(ridersRefresh.riders);
                             if (customersRefresh.success) setCustomers(customersRefresh.customers);
+                            await loadOrdersData();
                             showToast('Dashboard refreshed!', 'success');
                           } catch (error) {
                             console.error('Refresh error:', error);
@@ -1653,11 +1644,8 @@ const AdminDashboard = () => {
                         <button
                           onClick={async () => {
                             try {
-                              const ordersData = await getOrders();
-                              if (ordersData.success) {
-                                setOrders(ordersData.orders);
-                                showToast('Orders refreshed!', 'success');
-                              }
+                              await loadOrdersData();
+                              showToast('Orders refreshed!', 'success');
                             } catch (error) {
                               console.error('Refresh error:', error);
                               showToast('Failed to refresh orders', 'error');
